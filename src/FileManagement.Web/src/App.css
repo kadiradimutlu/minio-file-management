@@ -1,0 +1,15 @@
+﻿#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f5f5f5;
+}
+
+.app-card {
+  width: min(100%, 720px);
+}
