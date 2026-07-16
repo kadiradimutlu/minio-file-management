@@ -53,16 +53,21 @@ src/
 
 tests/
 └── FileManagement.UnitTests
-Katmanlar
-Domain: Temel entity ve domain modelleri
-Application: Interface, DTO ve uygulama servisleri
-Infrastructure: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
-Api: HTTP endpointleri ve API yapılandırması
-Web: React ve Ant Design kullanıcı arayüzü
-UnitTests: Kritik servislerin birim testleri
-Mevcut Durum
-Backend solution iskeleti oluşturuldu.
-React ve Ant Design frontend iskeleti oluşturuldu.
-Backend derlemesi başarılı.
-Frontend production derlemesi başarılı.
-Başlangıç testleri başarılı.
+```
+
+## Katmanlar
+
+- `Domain`: Temel entity ve domain modelleri
+- `Application`: Interface, DTO ve uygulama servisleri
+- `Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
+- `Api`: HTTP endpointleri ve API yapılandırması
+- `Web`: React ve Ant Design kullanıcı arayüzü
+- `UnitTests`: Kritik servislerin birim testleri
+
+## Mevcut Durum
+
+- Backend solution iskeleti oluşturuldu.
+- React ve Ant Design frontend iskeleti oluşturuldu.
+- Backend derlemesi başarılı.
+- Frontend production derlemesi başarılı.
+- Başlangıç testleri başarılı.
