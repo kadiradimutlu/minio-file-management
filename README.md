@@ -71,6 +71,8 @@ tests/
 - Backend derlemesi başarılı.
 - Frontend production derlemesi başarılı.
 - Başlangıç testleri başarılı.
+- PostgreSQL dosya metadata modeli oluşturuldu.
+- İlk Entity Framework Core migration'ı eklendi.
 
 ## Lokal Altyapının Çalıştırılması
 
