@@ -73,6 +73,8 @@ tests/
 - Başlangıç testleri başarılı.
 - PostgreSQL dosya metadata modeli oluşturuldu.
 - İlk Entity Framework Core migration'ı eklendi.
+- Yeniden kullanılabilir `IFileStorageService` arayüzü eklendi.
+- MinIO bucket, yükleme, indirme, silme, kontrol ve süreli URL işlemleri eklendi.
 
 ## Lokal Altyapının Çalıştırılması
 
