@@ -1,3 +1,4 @@
+using FileManagement.Application.Abstractions.Persistence;
 using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Infrastructure.Persistence;
 using FileManagement.Infrastructure.Storage.Minio;
@@ -26,6 +27,10 @@ public static class DependencyInjection
 
         services.AddDbContext<FileManagementDbContext>(
             options => options.UseNpgsql(connectionString));
+
+        services.AddScoped<
+            IStoredFileRepository,
+            StoredFileRepository>();
 
         services.AddOptions<MinioOptions>()
             .Bind(

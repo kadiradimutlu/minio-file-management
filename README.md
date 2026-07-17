@@ -75,6 +75,8 @@ tests/
 - İlk Entity Framework Core migration'ı eklendi.
 - Yeniden kullanılabilir `IFileStorageService` arayüzü eklendi.
 - MinIO bucket, yükleme, indirme, silme, kontrol ve süreli URL işlemleri eklendi.
+- MinIO işlemleri PostgreSQL metadata kayıtlarıyla uygulama servisinde birleştirildi.
+- Metadata kaydı başarısız olduğunda yüklenen MinIO nesnesi geri alınır.
 
 ## Lokal Altyapının Çalıştırılması
 

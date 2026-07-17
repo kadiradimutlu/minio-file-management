@@ -2,6 +2,8 @@ namespace FileManagement.Application.Abstractions.Storage;
 
 public interface IFileStorageService
 {
+    string BucketName { get; }
+
     Task EnsureBucketExistsAsync(
         CancellationToken cancellationToken = default);
 
