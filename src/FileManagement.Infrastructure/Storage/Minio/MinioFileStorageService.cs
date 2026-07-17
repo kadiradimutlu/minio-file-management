@@ -19,6 +19,8 @@ public sealed class MinioFileStorageService :
 
     private bool _bucketInitialized;
 
+    public string BucketName => _options.BucketName;
+
     public MinioFileStorageService(
         IMinioClient minioClient,
         IOptions<MinioOptions> options)
