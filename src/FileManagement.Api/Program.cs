@@ -2,17 +2,8 @@ using FileManagement.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var postgresConnectionString =
-    builder.Configuration.GetConnectionString("PostgreSql");
-
-if (string.IsNullOrWhiteSpace(postgresConnectionString))
-{
-    throw new InvalidOperationException(
-        "ConnectionStrings:PostgreSql is not configured.");
-}
-
 builder.Services.AddInfrastructure(
-    postgresConnectionString);
+    builder.Configuration);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
