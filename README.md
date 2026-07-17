@@ -1,4 +1,4 @@
-﻿# MinIO File Management
+# MinIO File Management
 
 MinIO tabanlı, yeniden kullanılabilir dosya yönetim modülü.
 
