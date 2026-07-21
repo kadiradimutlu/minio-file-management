@@ -77,6 +77,10 @@ tests/
 - MinIO bucket, yükleme, indirme, silme, kontrol ve süreli URL işlemleri eklendi.
 - MinIO işlemleri PostgreSQL metadata kayıtlarıyla uygulama servisinde birleştirildi.
 - Metadata kaydı başarısız olduğunda yüklenen MinIO nesnesi geri alınır.
+- Dosya yükleme, listeleme, detay, indirme ve silme HTTP endpointleri eklendi.
+- PDF ve görseller için inline önizleme endpointi eklendi.
+- Private MinIO nesneleri için süreli erişim URL endpointi eklendi.
+- Dosya boyutu, uzantı ve content type doğrulamaları eklendi.
 
 ## Lokal Altyapının Çalıştırılması
 
