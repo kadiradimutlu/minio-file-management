@@ -1,11 +1,15 @@
 using FileManagement.Api.Options;
 using FileManagement.Application;
+using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Infrastructure;
+using FileManagement.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 const string WebClientCorsPolicy =
     "WebClient";
 
-var builder = WebApplication.CreateBuilder(args);
+var builder =
+    WebApplication.CreateBuilder(args);
 
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -56,21 +60,42 @@ builder.Services.AddInfrastructure(
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
+
+await using (
+    var startupScope =
+        app.Services.CreateAsyncScope()
+)
+{
+    var dbContext =
+        startupScope.ServiceProvider
+            .GetRequiredService<
+                FileManagementDbContext>();
+
+    await dbContext.Database.MigrateAsync();
+
+    var storageService =
+        startupScope.ServiceProvider
+            .GetRequiredService<
+                IFileStorageService>();
+
+    await storageService
+        .EnsureBucketExistsAsync();
+}
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
-
 app.UseCors(
     WebClientCorsPolicy);
 
 app.UseAuthorization();
 
+app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
