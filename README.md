@@ -149,3 +149,43 @@ olarak derlenmektedir:
 MinIO Community kaynak kodu GNU AGPLv3 lisansı altındadır. Üretim veya
 ticari kullanım öncesinde lisans ve destek gereksinimleri ayrıca
 değerlendirilmelidir.
+## Docker Compose ile çalıştırma
+
+Uygulama aşağıdaki dört Docker Compose servisinden oluşur:
+
+- `postgres`: PostgreSQL metadata veritabanı
+- `minio`: MinIO nesne depolama servisi
+- `api`: ASP.NET Core Web API
+- `web`: React production build ve Nginx reverse proxy
+
+İlk çalıştırmadan önce `.env.example` dosyasını `.env` olarak kopyalayın:
+
+`Copy-Item ".env.example" ".env"`
+
+`.env` dosyasındaki yerel parolaları güvenli değerlerle değiştirin.
+
+Bütün servisleri oluşturup başlatmak için:
+
+`docker compose --env-file ".env" up -d --build --wait`
+
+Servislerin durumunu görüntülemek için:
+
+`docker compose --env-file ".env" ps`
+
+Yerel servis adresleri:
+
+- Web uygulaması: `http://127.0.0.1:8080`
+- Backend API health: `http://127.0.0.1:5080/health`
+- MinIO API: `http://127.0.0.1:9000`
+- MinIO Console: `http://127.0.0.1:9001`
+- PostgreSQL: `127.0.0.1:5432`
+
+API başlangıcında EF Core migration'ları uygulanır ve MinIO bucket'ı hazırlanır.
+
+Nginx, `/api` isteklerini API container'ına yönlendirir.
+
+Servisleri durdurmak için:
+
+`docker compose --env-file ".env" down`
+
+`docker compose down -v` komutu PostgreSQL ve MinIO volume'lerini de siler. Kalıcı verilerin korunması gerektiğinde `-v` kullanmayın.
