@@ -14,6 +14,7 @@ public sealed class MinioFileStorageService :
         TimeSpan.FromDays(7);
 
     private readonly IMinioClient _minioClient;
+    private readonly IMinioClient _presignedMinioClient;
     private readonly MinioOptions _options;
     private readonly SemaphoreSlim _bucketLock = new(1, 1);
 
@@ -27,6 +28,26 @@ public sealed class MinioFileStorageService :
     {
         _minioClient = minioClient;
         _options = options.Value;
+
+        var publicEndpoint =
+            string.IsNullOrWhiteSpace(
+                _options.PublicEndpoint)
+                ? _options.Endpoint
+                : _options.PublicEndpoint;
+
+        var publicUseSsl =
+            string.IsNullOrWhiteSpace(
+                _options.PublicEndpoint)
+                ? _options.UseSsl
+                : _options.PublicUseSsl;
+
+        _presignedMinioClient = new MinioClient()
+            .WithEndpoint(publicEndpoint)
+            .WithCredentials(
+                _options.AccessKey,
+                _options.SecretKey)
+            .WithSSL(publicUseSsl)
+            .Build();
     }
 
     public async Task EnsureBucketExistsAsync(
@@ -37,7 +58,8 @@ public sealed class MinioFileStorageService :
             return;
         }
 
-        await _bucketLock.WaitAsync(cancellationToken);
+        await _bucketLock.WaitAsync(
+            cancellationToken);
 
         try
         {
@@ -46,17 +68,23 @@ public sealed class MinioFileStorageService :
                 return;
             }
 
-            var bucketExistsArgs = new BucketExistsArgs()
-                .WithBucket(_options.BucketName);
+            var bucketExistsArgs =
+                new BucketExistsArgs()
+                    .WithBucket(
+                        _options.BucketName);
 
-            var bucketExists = await _minioClient.BucketExistsAsync(
-                bucketExistsArgs,
-                cancellationToken);
+            var bucketExists =
+                await _minioClient
+                    .BucketExistsAsync(
+                        bucketExistsArgs,
+                        cancellationToken);
 
             if (!bucketExists)
             {
-                var makeBucketArgs = new MakeBucketArgs()
-                    .WithBucket(_options.BucketName);
+                var makeBucketArgs =
+                    new MakeBucketArgs()
+                        .WithBucket(
+                            _options.BucketName);
 
                 await _minioClient.MakeBucketAsync(
                     makeBucketArgs,
@@ -102,14 +130,17 @@ public sealed class MinioFileStorageService :
                 nameof(contentType));
         }
 
-        await EnsureBucketExistsAsync(cancellationToken);
+        await EnsureBucketExistsAsync(
+            cancellationToken);
 
-        var putObjectArgs = new PutObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectName)
-            .WithStreamData(content)
-            .WithObjectSize(sizeBytes)
-            .WithContentType(contentType);
+        var putObjectArgs =
+            new PutObjectArgs()
+                .WithBucket(
+                    _options.BucketName)
+                .WithObject(objectName)
+                .WithStreamData(content)
+                .WithObjectSize(sizeBytes)
+                .WithContentType(contentType);
 
         await _minioClient.PutObjectAsync(
             putObjectArgs,
@@ -131,21 +162,28 @@ public sealed class MinioFileStorageService :
                 nameof(destination));
         }
 
-        await EnsureBucketExistsAsync(cancellationToken);
+        await EnsureBucketExistsAsync(
+            cancellationToken);
 
-        var getObjectArgs = new GetObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectName)
-            .WithCallbackStream(
-                (source, callbackCancellationToken) =>
-                    source.CopyToAsync(
-                        destination,
-                        81920,
-                        callbackCancellationToken));
+        var getObjectArgs =
+            new GetObjectArgs()
+                .WithBucket(
+                    _options.BucketName)
+                .WithObject(objectName)
+                .WithCallbackStream(
+                    (
+                        source,
+                        callbackCancellationToken
+                    ) =>
+                        source.CopyToAsync(
+                            destination,
+                            81920,
+                            callbackCancellationToken));
 
         await _minioClient.GetObjectAsync(
             getObjectArgs,
-            cancellationToken: cancellationToken);
+            cancellationToken:
+                cancellationToken);
     }
 
     public async Task<bool> ExistsAsync(
@@ -154,11 +192,14 @@ public sealed class MinioFileStorageService :
     {
         ValidateObjectName(objectName);
 
-        await EnsureBucketExistsAsync(cancellationToken);
+        await EnsureBucketExistsAsync(
+            cancellationToken);
 
-        var statObjectArgs = new StatObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectName);
+        var statObjectArgs =
+            new StatObjectArgs()
+                .WithBucket(
+                    _options.BucketName)
+                .WithObject(objectName);
 
         try
         {
@@ -184,11 +225,14 @@ public sealed class MinioFileStorageService :
     {
         ValidateObjectName(objectName);
 
-        await EnsureBucketExistsAsync(cancellationToken);
+        await EnsureBucketExistsAsync(
+            cancellationToken);
 
-        var removeObjectArgs = new RemoveObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectName);
+        var removeObjectArgs =
+            new RemoveObjectArgs()
+                .WithBucket(
+                    _options.BucketName)
+                .WithObject(objectName);
 
         await _minioClient.RemoveObjectAsync(
             removeObjectArgs,
@@ -212,20 +256,26 @@ public sealed class MinioFileStorageService :
                 "Expiry must be greater than zero and no longer than seven days.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        cancellationToken
+            .ThrowIfCancellationRequested();
 
-        await EnsureBucketExistsAsync(cancellationToken);
+        await EnsureBucketExistsAsync(
+            cancellationToken);
 
         var expirySeconds = checked(
-            (int)Math.Ceiling(expiresIn.TotalSeconds));
+            (int)Math.Ceiling(
+                expiresIn.TotalSeconds));
 
-        var presignedArgs = new PresignedGetObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectName)
-            .WithExpiry(expirySeconds);
+        var presignedArgs =
+            new PresignedGetObjectArgs()
+                .WithBucket(
+                    _options.BucketName)
+                .WithObject(objectName)
+                .WithExpiry(expirySeconds);
 
-        return await _minioClient.PresignedGetObjectAsync(
-            presignedArgs);
+        return await _presignedMinioClient
+            .PresignedGetObjectAsync(
+                presignedArgs);
     }
 
     public void Dispose()
@@ -243,6 +293,4 @@ public sealed class MinioFileStorageService :
                 nameof(objectName));
         }
     }
-
-
 }
