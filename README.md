@@ -81,6 +81,11 @@ tests/
 - PDF ve görseller için inline önizleme endpointi eklendi.
 - Private MinIO nesneleri için süreli erişim URL endpointi eklendi.
 - Dosya boyutu, uzantı ve content type doğrulamaları eklendi.
+- React ve Ant Design ile dosya yönetim arayüzü eklendi.
+- Çoklu sürükle-bırak yükleme ve yükleme ilerlemesi eklendi.
+- Dosya listesi, toplam dosya sayısı ve toplam boyut görünümü eklendi.
+- Önizleme, indirme, süreli bağlantı kopyalama ve silme işlemleri eklendi.
+- Vite geliştirme proxy'si ve web istemcisi için CORS yapılandırması eklendi.
 
 ## Lokal Altyapının Çalıştırılması
 

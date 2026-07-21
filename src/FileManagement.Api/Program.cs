@@ -2,7 +2,34 @@ using FileManagement.Api.Options;
 using FileManagement.Application;
 using FileManagement.Infrastructure;
 
+const string WebClientCorsPolicy =
+    "WebClient";
+
 var builder = WebApplication.CreateBuilder(args);
+
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? [];
+
+if (allowedOrigins.Length == 0)
+{
+    throw new InvalidOperationException(
+        "Cors:AllowedOrigins must contain at least one origin.");
+}
+
+builder.Services.AddCors(
+    options =>
+    {
+        options.AddPolicy(
+            WebClientCorsPolicy,
+            policy =>
+            {
+                policy
+                    .WithOrigins(allowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod();
+            });
+    });
 
 builder.Services.AddOptions<FileUploadOptions>()
     .Bind(
@@ -38,6 +65,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors(
+    WebClientCorsPolicy);
+
 app.UseAuthorization();
 
 app.MapControllers();
