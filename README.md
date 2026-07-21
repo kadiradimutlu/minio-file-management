@@ -1,4 +1,4 @@
-﻿# MinIO File Management
+# MinIO File Management
 
 MinIO tabanlı, yeniden kullanılabilir dosya yönetim modülü.
 
@@ -71,3 +71,121 @@ tests/
 - Backend derlemesi başarılı.
 - Frontend production derlemesi başarılı.
 - Başlangıç testleri başarılı.
+- PostgreSQL dosya metadata modeli oluşturuldu.
+- İlk Entity Framework Core migration'ı eklendi.
+- Yeniden kullanılabilir `IFileStorageService` arayüzü eklendi.
+- MinIO bucket, yükleme, indirme, silme, kontrol ve süreli URL işlemleri eklendi.
+- MinIO işlemleri PostgreSQL metadata kayıtlarıyla uygulama servisinde birleştirildi.
+- Metadata kaydı başarısız olduğunda yüklenen MinIO nesnesi geri alınır.
+- Dosya yükleme, listeleme, detay, indirme ve silme HTTP endpointleri eklendi.
+- PDF ve görseller için inline önizleme endpointi eklendi.
+- Private MinIO nesneleri için süreli erişim URL endpointi eklendi.
+- Dosya boyutu, uzantı ve content type doğrulamaları eklendi.
+- React ve Ant Design ile dosya yönetim arayüzü eklendi.
+- Çoklu sürükle-bırak yükleme ve yükleme ilerlemesi eklendi.
+- Dosya listesi, toplam dosya sayısı ve toplam boyut görünümü eklendi.
+- Önizleme, indirme, süreli bağlantı kopyalama ve silme işlemleri eklendi.
+- Vite geliştirme proxy'si ve web istemcisi için CORS yapılandırması eklendi.
+
+## Lokal Altyapının Çalıştırılması
+
+### Gereksinimler
+
+- Docker Desktop
+- Docker Compose
+- WSL 2
+
+### Ortam Dosyası
+
+Örnek ortam dosyasını kopyalayın:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+`.env` içerisindeki PostgreSQL ve MinIO parolalarını güçlü lokal
+değerlerle değiştirin. `.env` dosyası Git tarafından takip edilmez.
+
+### Servisleri Başlatma
+
+```powershell
+docker compose --env-file .env up --detach --build
+```
+
+Çalışan servisleri kontrol edin:
+
+```powershell
+docker compose --env-file .env ps
+```
+
+### Lokal Adresler
+
+- PostgreSQL: `localhost:5432`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
+
+### Servisleri Durdurma
+
+```powershell
+docker compose --env-file .env down
+```
+
+Named volume verilerini de tamamen silmek için:
+
+```powershell
+docker compose --env-file .env down --volumes
+```
+
+`--volumes` seçeneği PostgreSQL ve MinIO üzerindeki lokal verileri kalıcı
+olarak siler.
+
+### MinIO Sürüm Notu
+
+MinIO Community sürümü, sabitlenmiş kaynak kod tag'inden Docker image
+olarak derlenmektedir:
+
+`RELEASE.2025-10-15T17-29-55Z`
+
+MinIO Community kaynak kodu GNU AGPLv3 lisansı altındadır. Üretim veya
+ticari kullanım öncesinde lisans ve destek gereksinimleri ayrıca
+değerlendirilmelidir.
+## Docker Compose ile çalıştırma
+
+Uygulama aşağıdaki dört Docker Compose servisinden oluşur:
+
+- `postgres`: PostgreSQL metadata veritabanı
+- `minio`: MinIO nesne depolama servisi
+- `api`: ASP.NET Core Web API
+- `web`: React production build ve Nginx reverse proxy
+
+İlk çalıştırmadan önce `.env.example` dosyasını `.env` olarak kopyalayın:
+
+`Copy-Item ".env.example" ".env"`
+
+`.env` dosyasındaki yerel parolaları güvenli değerlerle değiştirin.
+
+Bütün servisleri oluşturup başlatmak için:
+
+`docker compose --env-file ".env" up -d --build --wait`
+
+Servislerin durumunu görüntülemek için:
+
+`docker compose --env-file ".env" ps`
+
+Yerel servis adresleri:
+
+- Web uygulaması: `http://127.0.0.1:8080`
+- Backend API health: `http://127.0.0.1:5080/health`
+- MinIO API: `http://127.0.0.1:9000`
+- MinIO Console: `http://127.0.0.1:9001`
+- PostgreSQL: `127.0.0.1:5432`
+
+API başlangıcında EF Core migration'ları uygulanır ve MinIO bucket'ı hazırlanır.
+
+Nginx, `/api` isteklerini API container'ına yönlendirir.
+
+Servisleri durdurmak için:
+
+`docker compose --env-file ".env" down`
+
+`docker compose down -v` komutu PostgreSQL ve MinIO volume'lerini de siler. Kalıcı verilerin korunması gerektiğinde `-v` kullanmayın.

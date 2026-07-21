@@ -1,15 +1,92 @@
-﻿#root {
+#root {
   min-height: 100vh;
 }
 
-.app-shell {
+.app-layout {
   min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at top right,
+      #e6f4ff,
+      transparent 32rem
+    ),
+    #f5f7fa;
+}
+
+.app-header {
+  height: auto;
+  min-height: 84px;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid #e5e7eb;
+  backdrop-filter: blur(12px);
+}
+
+.header-content,
+.content-container {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.brand-icon {
   display: grid;
+  width: 48px;
+  height: 48px;
   place-items: center;
-  padding: 24px;
-  background: #f5f5f5;
+  color: #ffffff;
+  font-size: 24px;
+  background: #1677ff;
+  border-radius: 14px;
 }
 
-.app-card {
-  width: min(100%, 720px);
+.brand-title {
+  margin: 0 !important;
+}
+
+.brand-subtitle {
+  color: #667085;
+}
+
+.app-content {
+  padding: 40px 24px;
+}
+
+.intro-section {
+  max-width: 700px;
+  margin-bottom: 24px;
+}
+
+.intro-section h2 {
+  margin-bottom: 8px;
+}
+
+.section-card {
+  margin-top: 20px;
+  overflow: hidden;
+}
+
+.upload-title {
+  margin-bottom: 6px !important;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.app-footer {
+  color: #667085;
+  text-align: center;
+  background: transparent;
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 14px 16px;
+  }
+
+  .app-content {
+    padding: 24px 12px;
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
 }

@@ -1,23 +1,101 @@
-var builder = WebApplication.CreateBuilder(args);
+using FileManagement.Api.Options;
+using FileManagement.Application;
+using FileManagement.Application.Abstractions.Storage;
+using FileManagement.Infrastructure;
+using FileManagement.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
-// Add services to the container.
+const string WebClientCorsPolicy =
+    "WebClient";
+
+var builder =
+    WebApplication.CreateBuilder(args);
+
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? [];
+
+if (allowedOrigins.Length == 0)
+{
+    throw new InvalidOperationException(
+        "Cors:AllowedOrigins must contain at least one origin.");
+}
+
+builder.Services.AddCors(
+    options =>
+    {
+        options.AddPolicy(
+            WebClientCorsPolicy,
+            policy =>
+            {
+                policy
+                    .WithOrigins(allowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod();
+            });
+    });
+
+builder.Services.AddOptions<FileUploadOptions>()
+    .Bind(
+        builder.Configuration.GetSection(
+            FileUploadOptions.SectionName))
+    .Validate(
+        options =>
+            options.MaxFileSizeBytes > 0,
+        "FileUpload:MaxFileSizeBytes must be greater than zero.")
+    .Validate(
+        options =>
+            options.AllowedExtensions.Length > 0,
+        "FileUpload:AllowedExtensions must not be empty.")
+    .Validate(
+        options =>
+            options.AllowedContentTypes.Length > 0,
+        "FileUpload:AllowedContentTypes must not be empty.")
+    .ValidateOnStart();
+
+builder.Services.AddApplication();
+
+builder.Services.AddInfrastructure(
+    builder.Configuration);
 
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+await using (
+    var startupScope =
+        app.Services.CreateAsyncScope()
+)
+{
+    var dbContext =
+        startupScope.ServiceProvider
+            .GetRequiredService<
+                FileManagementDbContext>();
+
+    await dbContext.Database.MigrateAsync();
+
+    var storageService =
+        startupScope.ServiceProvider
+            .GetRequiredService<
+                IFileStorageService>();
+
+    await storageService
+        .EnsureBucketExistsAsync();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+app.UseCors(
+    WebClientCorsPolicy);
 
 app.UseAuthorization();
 
+app.MapHealthChecks("/health");
 app.MapControllers();
 
 app.Run();
