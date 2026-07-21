@@ -136,13 +136,12 @@ public sealed class MinioFileStorageService :
         var getObjectArgs = new GetObjectArgs()
             .WithBucket(_options.BucketName)
             .WithObject(objectName)
-            .WithCallbackStream(source =>
-            {
-                CopyStream(
-                    source,
-                    destination,
-                    cancellationToken);
-            });
+            .WithCallbackStream(
+                (source, callbackCancellationToken) =>
+                    source.CopyToAsync(
+                        destination,
+                        81920,
+                        callbackCancellationToken));
 
         await _minioClient.GetObjectAsync(
             getObjectArgs,
@@ -245,31 +244,5 @@ public sealed class MinioFileStorageService :
         }
     }
 
-    private static void CopyStream(
-        Stream source,
-        Stream destination,
-        CancellationToken cancellationToken)
-    {
-        var buffer = new byte[81920];
 
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var bytesRead = source.Read(
-                buffer,
-                0,
-                buffer.Length);
-
-            if (bytesRead == 0)
-            {
-                break;
-            }
-
-            destination.Write(
-                buffer,
-                0,
-                bytesRead);
-        }
-    }
 }
