@@ -13,6 +13,8 @@ public interface IStoredFileRepository
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<StoredFile>> ListAsync(
+        string? relatedRecordType = null,
+        string? relatedRecordId = null,
         CancellationToken cancellationToken = default);
 
     void Remove(StoredFile storedFile);
