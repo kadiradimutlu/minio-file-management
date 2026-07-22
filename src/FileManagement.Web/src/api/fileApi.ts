@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AxiosProgressEvent } from 'axios'
 import type {
   FileAccessUrl,
+  RelatedRecordAssociation,
   StoredFile,
 } from '../models/file'
 
@@ -13,20 +14,43 @@ const apiClient = axios.create({
   timeout: 30_000,
 })
 
-export async function listFiles(): Promise<StoredFile[]> {
+export async function listFiles(
+  association?: RelatedRecordAssociation,
+): Promise<StoredFile[]> {
   const response =
-    await apiClient.get<StoredFile[]>('/files')
+    await apiClient.get<StoredFile[]>(
+      '/files',
+      {
+        params: association,
+      },
+    )
 
   return response.data
 }
 
 export async function uploadFile(
   file: File,
+  association?: RelatedRecordAssociation,
   onProgress?: (percent: number) => void,
 ): Promise<StoredFile> {
   const formData = new FormData()
 
-  formData.append('file', file)
+  formData.append(
+    'file',
+    file,
+  )
+
+  if (association) {
+    formData.append(
+      'relatedRecordType',
+      association.relatedRecordType,
+    )
+
+    formData.append(
+      'relatedRecordId',
+      association.relatedRecordId,
+    )
+  }
 
   const response =
     await apiClient.post<StoredFile>(
@@ -55,7 +79,9 @@ export async function uploadFile(
 export async function deleteFile(
   id: string,
 ): Promise<void> {
-  await apiClient.delete(`/files/${id}`)
+  await apiClient.delete(
+    `/files/${id}`,
+  )
 }
 
 export async function createPresignedUrl(
@@ -87,11 +113,17 @@ function createFileUrl(
 export function getDownloadUrl(
   id: string,
 ): string {
-  return createFileUrl(id, 'download')
+  return createFileUrl(
+    id,
+    'download',
+  )
 }
 
 export function getPreviewUrl(
   id: string,
 ): string {
-  return createFileUrl(id, 'preview')
+  return createFileUrl(
+    id,
+    'preview',
+  )
 }

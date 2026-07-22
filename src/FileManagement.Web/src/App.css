@@ -17,8 +17,10 @@
   height: auto;
   min-height: 84px;
   padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.94);
-  border-bottom: 1px solid #e5e7eb;
+  background:
+    rgba(255, 255, 255, 0.94);
+  border-bottom:
+    1px solid #e5e7eb;
   backdrop-filter: blur(12px);
 }
 
@@ -71,6 +73,41 @@
   font-weight: 600;
 }
 
+.association-fields,
+.filter-fields {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.association-help {
+  margin: 8px 0 16px !important;
+}
+
+.filter-panel {
+  padding: 16px;
+  margin-bottom: 18px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+
 .app-footer {
   color: #667085;
   text-align: center;
@@ -88,5 +125,10 @@
 
   .brand-subtitle {
     display: none;
+  }
+
+  .association-fields,
+  .filter-fields {
+    grid-template-columns: 1fr;
   }
 }

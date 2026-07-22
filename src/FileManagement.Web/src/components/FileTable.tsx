@@ -52,7 +52,9 @@ function formatFileSize(
     'GB',
   ]
 
-  let size = sizeBytes / 1024
+  let size =
+    sizeBytes / 1024
+
   let unitIndex = 0
 
   while (
@@ -70,8 +72,11 @@ function supportsPreview(
   contentType: string,
 ): boolean {
   return (
-    contentType === 'application/pdf' ||
-    contentType.startsWith('image/')
+    contentType ===
+      'application/pdf' ||
+    contentType.startsWith(
+      'image/',
+    )
   )
 }
 
@@ -99,7 +104,8 @@ export function FileTable({
     TableColumnsType<StoredFile> = [
       {
         title: 'Dosya',
-        dataIndex: 'originalFileName',
+        dataIndex:
+          'originalFileName',
         key: 'originalFileName',
         render: (
           fileName: string,
@@ -132,13 +138,61 @@ export function FileTable({
         ),
       },
       {
+        title: 'İlgili kayıt',
+        key: 'relatedRecord',
+        responsive: ['lg'],
+        width: 240,
+        render: (
+          _,
+          file,
+        ) => {
+          if (
+            !file.relatedRecordType ||
+            !file.relatedRecordId
+          ) {
+            return (
+              <Text type="secondary">
+                İlişkisiz
+              </Text>
+            )
+          }
+
+          return (
+            <Space
+              direction="vertical"
+              size={0}
+            >
+              <Tag>
+                {file.relatedRecordType}
+              </Tag>
+
+              <Text
+                copyable={{
+                  text:
+                    file.relatedRecordId,
+                }}
+                ellipsis={{
+                  tooltip:
+                    file.relatedRecordId,
+                }}
+              >
+                {file.relatedRecordId}
+              </Text>
+            </Space>
+          )
+        },
+      },
+      {
         title: 'Boyut',
         dataIndex: 'sizeBytes',
         key: 'sizeBytes',
         width: 110,
         render: (
           sizeBytes: number,
-        ) => formatFileSize(sizeBytes),
+        ) =>
+          formatFileSize(
+            sizeBytes,
+          ),
       },
       {
         title: 'Yüklenme',
@@ -177,10 +231,14 @@ export function FileTable({
                     file.contentType,
                   )
                 }
-                icon={<EyeOutlined />}
+                icon={
+                  <EyeOutlined />
+                }
                 onClick={() => {
                   window.open(
-                    getPreviewUrl(file.id),
+                    getPreviewUrl(
+                      file.id,
+                    ),
                     '_blank',
                     'noopener,noreferrer',
                   )
@@ -191,10 +249,14 @@ export function FileTable({
             <Tooltip title="İndir">
               <Button
                 aria-label="Dosyayı indir"
-                icon={<DownloadOutlined />}
+                icon={
+                  <DownloadOutlined />
+                }
                 onClick={() => {
                   startDownload(
-                    getDownloadUrl(file.id),
+                    getDownloadUrl(
+                      file.id,
+                    ),
                   )
                 }}
               />
@@ -203,9 +265,13 @@ export function FileTable({
             <Tooltip title="Süreli bağlantıyı kopyala">
               <Button
                 aria-label="Süreli bağlantıyı kopyala"
-                icon={<CopyOutlined />}
+                icon={
+                  <CopyOutlined />
+                }
                 onClick={() => {
-                  void onCopyLink(file.id)
+                  void onCopyLink(
+                    file.id,
+                  )
                 }}
               />
             </Tooltip>
@@ -225,7 +291,9 @@ export function FileTable({
                 <Button
                   aria-label="Dosyayı sil"
                   danger
-                  icon={<DeleteOutlined />}
+                  icon={
+                    <DeleteOutlined />
+                  }
                 />
               </Tooltip>
             </Popconfirm>
@@ -242,7 +310,7 @@ export function FileTable({
       locale={{
         emptyText: (
           <Empty
-            description="Henüz dosya yüklenmedi"
+            description="Gösterilecek dosya bulunamadı"
           />
         ),
       }}
@@ -253,7 +321,7 @@ export function FileTable({
       }}
       rowKey="id"
       scroll={{
-        x: 900,
+        x: 1150,
       }}
     />
   )
