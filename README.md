@@ -1,20 +1,49 @@
 # MinIO File Management
 
-MinIO tabanlı, yeniden kullanılabilir dosya yönetim modülü.
+MinIO Object Storage, PostgreSQL, ASP.NET Core ve React kullanılarak geliştirilmiş yeniden kullanılabilir dosya yönetim modülü.
 
-## Amaç
+Dosyaların fiziksel içerikleri MinIO üzerinde, dosya metadata bilgileri ise PostgreSQL üzerinde saklanır.
 
-Uygulama aşağıdaki işlemleri destekleyecektir:
+## Özellikler
 
-- Tekli ve çoklu dosya yükleme
-- Dosya listeleme
+- Tekli dosya yükleme API'si
+- React arayüzünden çoklu dosya seçimi ve yükleme
+- Sürükle-bırak dosya yükleme
+- Yükleme ilerleme göstergesi
+- Dosya listeleme ve detay görüntüleme
 - Dosya indirme
+- PDF ve görseller için tarayıcı içi önizleme
 - Dosya silme
-- Uygun dosya türleri için ön izleme
-- Süreli erişim bağlantısı oluşturma
-- Dosya metadata bilgilerinin PostgreSQL üzerinde saklanması
+- Süreli MinIO erişim bağlantısı oluşturma
+- Dosya boyutu, uzantı ve content type doğrulaması
+- Metadata bilgilerinin PostgreSQL üzerinde saklanması
+- Dosya içeriklerinin private MinIO bucket üzerinde saklanması
+- Metadata kaydı başarısız olursa MinIO nesnesinin geri alınması
+- İlgili kayıt türü ve kimliğiyle dosya ilişkilendirme
+- İlgili kayda göre dosya filtreleme
+- OpenAPI dokümanı ve interaktif Swagger UI
+- Docker Compose ile dört servisli lokal çalışma ortamı
+- GitHub Actions CI doğrulamaları
+- xUnit birim testleri
 
-Dosyaların fiziksel içerikleri MinIO Object Storage üzerinde tutulacaktır.
+## İlgili Kayıt İlişkilendirmesi
+
+Bir dosya isteğe bağlı olarak başka bir sistem kaydıyla ilişkilendirilebilir.
+
+Kullanılan alanlar:
+
+| Alan | Maksimum uzunluk | Açıklama |
+|---|---:|---|
+| `relatedRecordType` | 100 | İlgili kaydın türü. Örnek: `Student` |
+| `relatedRecordId` | 255 | İlgili kaydın kimliği. Sayısal değer veya UUID olabilir. |
+
+Kurallar:
+
+- İki alan birlikte verilmelidir.
+- İki alan da boş bırakılırsa dosya ilişkisiz yüklenir.
+- Yalnızca bir alan verilirse API `400 Bad Request` döndürür.
+- Listeleme endpoint'i aynı alanlarla filtrelenebilir.
+- PostgreSQL üzerinde iki alanı kapsayan birleşik bir index bulunur.
 
 ## Teknolojiler
 
@@ -25,7 +54,8 @@ Dosyaların fiziksel içerikleri MinIO Object Storage üzerinde tutulacaktır.
 - Entity Framework Core
 - PostgreSQL
 - MinIO .NET SDK
-- OpenAPI / Swagger
+- OpenAPI
+- Swagger UI
 - xUnit
 
 ### Frontend
@@ -40,10 +70,12 @@ Dosyaların fiziksel içerikleri MinIO Object Storage üzerinde tutulacaktır.
 
 - Docker
 - Docker Compose
+- Nginx
+- GitHub Actions
 
-## Proje Yapısı
+## Mimari
 
-```text
+~~~text
 src/
 ├── FileManagement.Api
 ├── FileManagement.Application
@@ -53,41 +85,22 @@ src/
 
 tests/
 └── FileManagement.UnitTests
-```
 
-## Katmanlar
+docs/
+├── requirements-evidence.md
+└── verification-report.md
+~~~
 
-- `Domain`: Temel entity ve domain modelleri
-- `Application`: Interface, DTO ve uygulama servisleri
+Katmanların sorumlulukları:
+
+- `Domain`: Entity'ler ve domain kuralları
+- `Application`: Servisler, DTO'lar ve soyutlamalar
 - `Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
-- `Api`: HTTP endpointleri ve API yapılandırması
+- `Api`: HTTP endpoint'leri, doğrulamalar, OpenAPI ve Swagger
 - `Web`: React ve Ant Design kullanıcı arayüzü
-- `UnitTests`: Kritik servislerin birim testleri
+- `UnitTests`: Domain ve application servis testleri
 
-## Mevcut Durum
-
-- Backend solution iskeleti oluşturuldu.
-- React ve Ant Design frontend iskeleti oluşturuldu.
-- Backend derlemesi başarılı.
-- Frontend production derlemesi başarılı.
-- Başlangıç testleri başarılı.
-- PostgreSQL dosya metadata modeli oluşturuldu.
-- İlk Entity Framework Core migration'ı eklendi.
-- Yeniden kullanılabilir `IFileStorageService` arayüzü eklendi.
-- MinIO bucket, yükleme, indirme, silme, kontrol ve süreli URL işlemleri eklendi.
-- MinIO işlemleri PostgreSQL metadata kayıtlarıyla uygulama servisinde birleştirildi.
-- Metadata kaydı başarısız olduğunda yüklenen MinIO nesnesi geri alınır.
-- Dosya yükleme, listeleme, detay, indirme ve silme HTTP endpointleri eklendi.
-- PDF ve görseller için inline önizleme endpointi eklendi.
-- Private MinIO nesneleri için süreli erişim URL endpointi eklendi.
-- Dosya boyutu, uzantı ve content type doğrulamaları eklendi.
-- React ve Ant Design ile dosya yönetim arayüzü eklendi.
-- Çoklu sürükle-bırak yükleme ve yükleme ilerlemesi eklendi.
-- Dosya listesi, toplam dosya sayısı ve toplam boyut görünümü eklendi.
-- Önizleme, indirme, süreli bağlantı kopyalama ve silme işlemleri eklendi.
-- Vite geliştirme proxy'si ve web istemcisi için CORS yapılandırması eklendi.
-
-## Lokal Altyapının Çalıştırılması
+## Hızlı Başlangıç
 
 ### Gereksinimler
 
@@ -95,97 +108,226 @@ tests/
 - Docker Compose
 - WSL 2
 
-### Ortam Dosyası
+### Ortam dosyası
 
 Örnek ortam dosyasını kopyalayın:
 
-```powershell
-Copy-Item .env.example .env
-```
+~~~powershell
+Copy-Item ".env.example" ".env"
+~~~
 
-`.env` içerisindeki PostgreSQL ve MinIO parolalarını güçlü lokal
-değerlerle değiştirin. `.env` dosyası Git tarafından takip edilmez.
+`.env` içindeki PostgreSQL ve MinIO parolalarını lokal kullanım için güvenli değerlerle değiştirin.
 
-### Servisleri Başlatma
+`.env` dosyası Git tarafından takip edilmez.
 
-```powershell
-docker compose --env-file .env up --detach --build
-```
+### Servisleri başlatma
 
-Çalışan servisleri kontrol edin:
+~~~powershell
+docker compose `
+    --env-file ".env" `
+    up `
+    --detach `
+    --build `
+    --wait
+~~~
 
-```powershell
-docker compose --env-file .env ps
-```
+Servisleri görüntüleme:
 
-### Lokal Adresler
+~~~powershell
+docker compose `
+    --env-file ".env" `
+    ps
+~~~
 
-- PostgreSQL: `localhost:5432`
-- MinIO API: `http://localhost:9000`
-- MinIO Console: `http://localhost:9001`
+API başlangıcında:
 
-### Servisleri Durdurma
+- Entity Framework Core migration'ları uygulanır.
+- MinIO bucket'ı hazırlanır.
 
-```powershell
-docker compose --env-file .env down
-```
+## Lokal Adresler
 
-Named volume verilerini de tamamen silmek için:
+| Servis | Adres |
+|---|---|
+| Web uygulaması | `http://127.0.0.1:8080` |
+| API health | `http://127.0.0.1:5080/health` |
+| Swagger UI | `http://127.0.0.1:5080/swagger` |
+| OpenAPI JSON | `http://127.0.0.1:5080/openapi/v1.json` |
+| MinIO API | `http://127.0.0.1:9000` |
+| MinIO Console | `http://127.0.0.1:9001` |
+| PostgreSQL | `127.0.0.1:5432` |
 
-```powershell
-docker compose --env-file .env down --volumes
-```
+Web container'ındaki Nginx, `/api` isteklerini API container'ına yönlendirir.
 
-`--volumes` seçeneği PostgreSQL ve MinIO üzerindeki lokal verileri kalıcı
-olarak siler.
+## API Endpoint'leri
 
-### MinIO Sürüm Notu
+| Metot | Endpoint | Açıklama |
+|---|---|---|
+| `POST` | `/api/files` | Multipart dosya yükleme |
+| `GET` | `/api/files` | Dosyaları listeleme |
+| `GET` | `/api/files/{id}` | Dosya metadata detayını alma |
+| `GET` | `/api/files/{id}/download` | Dosyayı indirme |
+| `GET` | `/api/files/{id}/preview` | Desteklenen dosyayı önizleme |
+| `GET` | `/api/files/{id}/presigned-url` | Süreli MinIO URL'si oluşturma |
+| `DELETE` | `/api/files/{id}` | Dosyayı ve metadata kaydını silme |
+| `GET` | `/health` | API sağlık kontrolü |
 
-MinIO Community sürümü, sabitlenmiş kaynak kod tag'inden Docker image
-olarak derlenmektedir:
+## API Kullanım Örnekleri
 
-`RELEASE.2025-10-15T17-29-55Z`
+### İlişkisiz dosya yükleme
 
-MinIO Community kaynak kodu GNU AGPLv3 lisansı altındadır. Üretim veya
-ticari kullanım öncesinde lisans ve destek gereksinimleri ayrıca
-değerlendirilmelidir.
-## Docker Compose ile çalıştırma
+~~~powershell
+curl.exe `
+    --request POST `
+    "http://127.0.0.1:5080/api/files" `
+    --form "file=@C:\Temp\report.pdf;type=application/pdf"
+~~~
 
-Uygulama aşağıdaki dört Docker Compose servisinden oluşur:
+### İlgili kayıtla dosya yükleme
 
-- `postgres`: PostgreSQL metadata veritabanı
-- `minio`: MinIO nesne depolama servisi
-- `api`: ASP.NET Core Web API
-- `web`: React production build ve Nginx reverse proxy
+~~~powershell
+curl.exe `
+    --request POST `
+    "http://127.0.0.1:5080/api/files" `
+    --form "file=@C:\Temp\report.pdf;type=application/pdf" `
+    --form "relatedRecordType=Student" `
+    --form "relatedRecordId=42"
+~~~
 
-İlk çalıştırmadan önce `.env.example` dosyasını `.env` olarak kopyalayın:
+### İlgili kayda göre listeleme
 
-`Copy-Item ".env.example" ".env"`
+~~~powershell
+Invoke-RestMethod `
+    -Method Get `
+    -Uri "http://127.0.0.1:5080/api/files?relatedRecordType=Student&relatedRecordId=42"
+~~~
 
-`.env` dosyasındaki yerel parolaları güvenli değerlerle değiştirin.
+## Varsayılan Dosya Doğrulamaları
 
-Bütün servisleri oluşturup başlatmak için:
+Frontend aşağıdaki uzantıları kabul eder:
 
-`docker compose --env-file ".env" up -d --build --wait`
+~~~text
+.pdf
+.png
+.jpg
+.jpeg
+.txt
+.docx
+.xlsx
+~~~
 
-Servislerin durumunu görüntülemek için:
+Varsayılan maksimum dosya boyutu `20 MB`'dır.
 
-`docker compose --env-file ".env" ps`
+Backend ayrıca izin verilen uzantıları ve content type değerlerini yapılandırma üzerinden doğrular.
 
-Yerel servis adresleri:
+## Geliştirme Komutları
 
-- Web uygulaması: `http://127.0.0.1:8080`
-- Backend API health: `http://127.0.0.1:5080/health`
-- MinIO API: `http://127.0.0.1:9000`
-- MinIO Console: `http://127.0.0.1:9001`
-- PostgreSQL: `127.0.0.1:5432`
+### Backend
 
-API başlangıcında EF Core migration'ları uygulanır ve MinIO bucket'ı hazırlanır.
+~~~powershell
+dotnet restore "MinioFileManagement.sln"
 
-Nginx, `/api` isteklerini API container'ına yönlendirir.
+dotnet build `
+    "MinioFileManagement.sln" `
+    --configuration Release `
+    --no-restore
 
-Servisleri durdurmak için:
+dotnet test `
+    "MinioFileManagement.sln" `
+    --configuration Release `
+    --no-build
+~~~
 
-`docker compose --env-file ".env" down`
+### Frontend
 
-`docker compose down -v` komutu PostgreSQL ve MinIO volume'lerini de siler. Kalıcı verilerin korunması gerektiğinde `-v` kullanmayın.
+~~~powershell
+Push-Location "src\FileManagement.Web"
+
+npm ci
+npm run lint
+npm run build
+
+Pop-Location
+~~~
+
+### EF Core model kontrolü
+
+~~~powershell
+dotnet ef migrations has-pending-model-changes `
+    --project `
+    "src\FileManagement.Infrastructure\FileManagement.Infrastructure.csproj" `
+    --startup-project `
+    "src\FileManagement.Api\FileManagement.Api.csproj"
+~~~
+
+## CI
+
+GitHub Actions aşağıdaki işleri çalıştırır.
+
+### Backend
+
+- NuGet restore ve güvenlik denetimi
+- Release build
+- xUnit testleri
+- Zafiyetli NuGet paket raporu
+
+### Frontend
+
+- `npm ci`
+- Lint
+- Production build
+- Yüksek önem seviyeli npm güvenlik denetimi
+
+### Containers
+
+- Docker Compose yapılandırma kontrolü
+- Servis listesinin doğrulanması
+- API ve Web image build işlemleri
+- Oluşturulan image'ların doğrulanması
+
+## Servisleri Durdurma
+
+Volume verilerini koruyarak:
+
+~~~powershell
+docker compose `
+    --env-file ".env" `
+    down
+~~~
+
+PostgreSQL ve MinIO volume verilerini de silerek:
+
+~~~powershell
+docker compose `
+    --env-file ".env" `
+    down `
+    --volumes
+~~~
+
+`--volumes` seçeneği lokal PostgreSQL ve MinIO verilerini kalıcı olarak siler.
+
+## Güvenlik ve Üretim Notları
+
+Bu repository bir dosya yönetim modülü ve lokal çalışma örneğidir.
+
+Üretim ortamından önce ayrıca değerlendirilmesi gereken konular:
+
+- Authentication ve authorization
+- Kullanıcı veya tenant izolasyonu
+- Zararlı dosya taraması
+- Rate limiting
+- HTTPS ve reverse proxy güvenliği
+- Secret yönetimi
+- Yedekleme ve geri yükleme
+- Loglama, gözlemlenebilirlik ve alarm mekanizmaları
+- MinIO lisans ve destek koşulları
+
+MinIO Community image'ı sabitlenmiş kaynak kod tag'inden oluşturulur:
+
+~~~text
+RELEASE.2025-10-15T17-29-55Z
+~~~
+
+## Kanıt ve Doğrulama
+
+- [Gereksinim–kanıt matrisi](docs/requirements-evidence.md)
+- [Doğrulama raporu](docs/verification-report.md)

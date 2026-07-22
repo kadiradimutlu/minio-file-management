@@ -85,10 +85,16 @@ await using (
         .EnsureBucketExistsAsync();
 }
 
-if (app.Environment.IsDevelopment())
+app.MapOpenApi();
+
+app.UseSwaggerUI(options =>
 {
-    app.MapOpenApi();
-}
+    options.SwaggerEndpoint(
+        "/openapi/v1.json",
+        "File Management API v1");
+
+    options.RoutePrefix = "swagger";
+});
 
 app.UseCors(
     WebClientCorsPolicy);

@@ -18,11 +18,30 @@ public sealed class FileManagementService : IFileManagementService
         _storageService = storageService;
     }
 
+    public Task<StoredFileDto> UploadAsync(
+        string originalFileName,
+        string contentType,
+        long sizeBytes,
+        Stream content,
+        CancellationToken cancellationToken = default)
+    {
+        return UploadAsync(
+            originalFileName,
+            contentType,
+            sizeBytes,
+            content,
+            null,
+            null,
+            cancellationToken);
+    }
+
     public async Task<StoredFileDto> UploadAsync(
         string originalFileName,
         string contentType,
         long sizeBytes,
         Stream content,
+        string? relatedRecordType,
+        string? relatedRecordId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -55,8 +74,20 @@ public sealed class FileManagementService : IFileManagementService
                 "File size cannot be negative.");
         }
 
-        var safeFileName = GetSafeFileName(originalFileName);
-        var objectName = CreateObjectName(safeFileName);
+        var safeFileName =
+            GetSafeFileName(originalFileName);
+
+        var objectName =
+            CreateObjectName(safeFileName);
+
+        var storedFile = new StoredFile(
+            safeFileName,
+            objectName,
+            _storageService.BucketName,
+            contentType,
+            sizeBytes,
+            relatedRecordType,
+            relatedRecordId);
 
         await _storageService.UploadAsync(
             objectName,
@@ -64,13 +95,6 @@ public sealed class FileManagementService : IFileManagementService
             sizeBytes,
             contentType,
             cancellationToken);
-
-        var storedFile = new StoredFile(
-            safeFileName,
-            objectName,
-            _storageService.BucketName,
-            contentType,
-            sizeBytes);
 
         try
         {
@@ -100,10 +124,28 @@ public sealed class FileManagementService : IFileManagementService
         return Map(storedFile);
     }
 
-    public async Task<IReadOnlyList<StoredFileDto>> ListAsync(
+    public Task<IReadOnlyList<StoredFileDto>> ListAsync(
         CancellationToken cancellationToken = default)
     {
+        return ListAsync(
+            null,
+            null,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<StoredFileDto>> ListAsync(
+        string? relatedRecordType,
+        string? relatedRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        var association =
+            NormalizeRelatedRecordAssociation(
+                relatedRecordType,
+                relatedRecordId);
+
         var storedFiles = await _repository.ListAsync(
+            association.Type,
+            association.Id,
             cancellationToken);
 
         return storedFiles
@@ -213,7 +255,65 @@ public sealed class FileManagementService : IFileManagementService
             storedFile.OriginalFileName,
             storedFile.ContentType,
             storedFile.SizeBytes,
-            storedFile.CreatedAtUtc);
+            storedFile.CreatedAtUtc,
+            storedFile.RelatedRecordType,
+            storedFile.RelatedRecordId);
+    }
+
+    private static (
+        string? Type,
+        string? Id
+    ) NormalizeRelatedRecordAssociation(
+        string? relatedRecordType,
+        string? relatedRecordId)
+    {
+        var normalizedType =
+            NormalizeOptionalValue(relatedRecordType);
+
+        var normalizedId =
+            NormalizeOptionalValue(relatedRecordId);
+
+        if (
+            (normalizedType is null) !=
+            (normalizedId is null)
+        )
+        {
+            throw new ArgumentException(
+                "Related record type and related record id must be provided together.");
+        }
+
+        if (
+            normalizedType?.Length >
+            StoredFile.RelatedRecordTypeMaxLength
+        )
+        {
+            throw new ArgumentException(
+                $"Related record type cannot exceed {StoredFile.RelatedRecordTypeMaxLength} characters.",
+                nameof(relatedRecordType));
+        }
+
+        if (
+            normalizedId?.Length >
+            StoredFile.RelatedRecordIdMaxLength
+        )
+        {
+            throw new ArgumentException(
+                $"Related record id cannot exceed {StoredFile.RelatedRecordIdMaxLength} characters.",
+                nameof(relatedRecordId));
+        }
+
+        return (
+            normalizedType,
+            normalizedId
+        );
+    }
+
+    private static string? NormalizeOptionalValue(
+        string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 
     private static string GetSafeFileName(

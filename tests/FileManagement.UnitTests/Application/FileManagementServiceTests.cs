@@ -31,6 +31,8 @@ public sealed class FileManagementServiceTests
         Assert.Equal("report.PDF", result.OriginalFileName);
         Assert.Equal("application/pdf", result.ContentType);
         Assert.Equal(bytes.LongLength, result.SizeBytes);
+        Assert.Null(result.RelatedRecordType);
+        Assert.Null(result.RelatedRecordId);
 
         var storedFile = Assert.Single(
             repository.StoredFiles);
@@ -43,6 +45,131 @@ public sealed class FileManagementServiceTests
         Assert.True(
             storage.Objects.ContainsKey(
                 storedFile.ObjectName));
+    }
+
+    [Fact]
+    public async Task UploadAsync_WithRelatedRecord_SavesAssociation()
+    {
+        var repository = new FakeStoredFileRepository();
+        var storage = new FakeFileStorageService();
+        var service = new FileManagementService(
+            repository,
+            storage);
+
+        var bytes = "associated-content"u8.ToArray();
+
+        using var stream = new MemoryStream(
+            bytes,
+            writable: false);
+
+        var result = await service.UploadAsync(
+            "student-document.pdf",
+            "application/pdf",
+            bytes.LongLength,
+            stream,
+            " Student ",
+            " 42 ");
+
+        Assert.Equal(
+            "Student",
+            result.RelatedRecordType);
+
+        Assert.Equal(
+            "42",
+            result.RelatedRecordId);
+
+        var storedFile = Assert.Single(
+            repository.StoredFiles);
+
+        Assert.Equal(
+            "Student",
+            storedFile.RelatedRecordType);
+
+        Assert.Equal(
+            "42",
+            storedFile.RelatedRecordId);
+    }
+
+    [Fact]
+    public async Task UploadAsync_WithIncompleteAssociation_DoesNotUploadObject()
+    {
+        var repository = new FakeStoredFileRepository();
+        var storage = new FakeFileStorageService();
+        var service = new FileManagementService(
+            repository,
+            storage);
+
+        var bytes = "invalid-association"u8.ToArray();
+
+        using var stream = new MemoryStream(
+            bytes,
+            writable: false);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.UploadAsync(
+                "student-document.pdf",
+                "application/pdf",
+                bytes.LongLength,
+                stream,
+                "Student",
+                null));
+
+        Assert.Empty(repository.StoredFiles);
+        Assert.Empty(storage.Objects);
+        Assert.Empty(storage.DeletedObjectNames);
+    }
+
+    [Fact]
+    public async Task ListAsync_WithRelatedRecord_ReturnsMatchingFiles()
+    {
+        var repository = new FakeStoredFileRepository();
+        var service = new FileManagementService(
+            repository,
+            new FakeFileStorageService());
+
+        repository.StoredFiles.AddRange(
+        [
+            new StoredFile(
+                "student-42.pdf",
+                "student-42.pdf",
+                "files",
+                "application/pdf",
+                100,
+                "Student",
+                "42"),
+            new StoredFile(
+                "student-43.pdf",
+                "student-43.pdf",
+                "files",
+                "application/pdf",
+                100,
+                "Student",
+                "43"),
+            new StoredFile(
+                "unrelated.pdf",
+                "unrelated.pdf",
+                "files",
+                "application/pdf",
+                100)
+        ]);
+
+        var results = await service.ListAsync(
+            " Student ",
+            " 42 ");
+
+        var result = Assert.Single(results);
+
+        Assert.Equal(
+            "student-42.pdf",
+            result.OriginalFileName);
+
+        Assert.Equal(
+            "Student",
+            result.RelatedRecordType);
+
+        Assert.Equal(
+            "42",
+            result.RelatedRecordId);
     }
 
     [Fact]
@@ -113,10 +240,32 @@ public sealed class FileManagementServiceTests
         }
 
         public Task<IReadOnlyList<StoredFile>> ListAsync(
+            string? relatedRecordType = null,
+            string? relatedRecordId = null,
             CancellationToken cancellationToken = default)
         {
+            IEnumerable<StoredFile> query =
+                StoredFiles;
+
+            if (
+                relatedRecordType is not null &&
+                relatedRecordId is not null
+            )
+            {
+                query = query.Where(
+                    storedFile =>
+                        storedFile.RelatedRecordType ==
+                            relatedRecordType &&
+                        storedFile.RelatedRecordId ==
+                            relatedRecordId);
+            }
+
             IReadOnlyList<StoredFile> result =
-                StoredFiles.ToArray();
+                query
+                    .OrderByDescending(
+                        storedFile =>
+                            storedFile.CreatedAtUtc)
+                    .ToArray();
 
             return Task.FromResult(result);
         }

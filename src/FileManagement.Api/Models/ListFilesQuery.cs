@@ -3,19 +3,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FileManagement.Api.Models;
 
-public sealed class UploadFileRequest :
+public sealed class ListFilesQuery :
     IValidatableObject
 {
-    [FromForm(Name = "file")]
-    [Required]
-    public IFormFile File { get; init; } =
-        null!;
-
-    [FromForm(Name = "relatedRecordType")]
+    [FromQuery(Name = "relatedRecordType")]
     [StringLength(100)]
     public string? RelatedRecordType { get; init; }
 
-    [FromForm(Name = "relatedRecordId")]
+    [FromQuery(Name = "relatedRecordId")]
     [StringLength(255)]
     public string? RelatedRecordId { get; init; }
 
