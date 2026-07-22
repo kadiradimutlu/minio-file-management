@@ -42,6 +42,16 @@ public sealed class StoredFileConfiguration :
             .HasColumnName("size_bytes")
             .IsRequired();
 
+        builder.Property(file => file.RelatedRecordType)
+            .HasColumnName("related_record_type")
+            .HasMaxLength(
+                StoredFile.RelatedRecordTypeMaxLength);
+
+        builder.Property(file => file.RelatedRecordId)
+            .HasColumnName("related_record_id")
+            .HasMaxLength(
+                StoredFile.RelatedRecordIdMaxLength);
+
         builder.Property(file => file.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .HasColumnType("timestamp with time zone")
@@ -56,5 +66,14 @@ public sealed class StoredFileConfiguration :
             .IsUnique()
             .HasDatabaseName(
                 "ux_stored_files_bucket_object_name");
+
+        builder.HasIndex(
+                file => new
+                {
+                    file.RelatedRecordType,
+                    file.RelatedRecordId
+                })
+            .HasDatabaseName(
+                "ix_stored_files_related_record");
     }
 }
