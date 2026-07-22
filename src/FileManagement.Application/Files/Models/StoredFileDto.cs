@@ -5,4 +5,6 @@ public sealed record StoredFileDto(
     string OriginalFileName,
     string ContentType,
     long SizeBytes,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    string? RelatedRecordType,
+    string? RelatedRecordId);

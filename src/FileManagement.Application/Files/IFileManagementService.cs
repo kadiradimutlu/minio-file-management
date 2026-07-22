@@ -11,7 +11,21 @@ public interface IFileManagementService
         Stream content,
         CancellationToken cancellationToken = default);
 
+    Task<StoredFileDto> UploadAsync(
+        string originalFileName,
+        string contentType,
+        long sizeBytes,
+        Stream content,
+        string? relatedRecordType,
+        string? relatedRecordId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<StoredFileDto>> ListAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StoredFileDto>> ListAsync(
+        string? relatedRecordType,
+        string? relatedRecordId,
         CancellationToken cancellationToken = default);
 
     Task<StoredFileDto?> GetByIdAsync(

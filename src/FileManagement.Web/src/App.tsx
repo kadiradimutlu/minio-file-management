@@ -1,5 +1,7 @@
 import {
+  ClearOutlined,
   CloudServerOutlined,
+  FilterOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
 import {
@@ -8,10 +10,12 @@ import {
   Card,
   Col,
   Flex,
+  Input,
   Layout,
   Row,
   Space,
   Statistic,
+  Tag,
   Typography,
 } from 'antd'
 import {
@@ -32,6 +36,7 @@ import {
   FileUploadDropzone,
 } from './components/FileUploadDropzone'
 import type {
+  RelatedRecordAssociation,
   StoredFile,
 } from './models/file'
 
@@ -65,14 +70,18 @@ async function copyText(
   textArea.style.position = 'fixed'
   textArea.style.opacity = '0'
 
-  document.body.appendChild(textArea)
+  document.body.appendChild(
+    textArea,
+  )
+
   textArea.select()
   document.execCommand('copy')
   textArea.remove()
 }
 
 function App() {
-  const { message } = AntApp.useApp()
+  const { message } =
+    AntApp.useApp()
 
   const [files, setFiles] =
     useState<StoredFile[]>([])
@@ -80,13 +89,32 @@ function App() {
   const [loading, setLoading] =
     useState(true)
 
+  const [
+    filterRecordType,
+    setFilterRecordType,
+  ] = useState('')
+
+  const [
+    filterRecordId,
+    setFilterRecordId,
+  ] = useState('')
+
+  const [
+    activeAssociation,
+    setActiveAssociation,
+  ] = useState<
+    RelatedRecordAssociation | undefined
+  >()
+
   const loadFiles =
     useCallback(async () => {
       setLoading(true)
 
       try {
         const result =
-          await listFiles()
+          await listFiles(
+            activeAssociation,
+          )
 
         setFiles(result)
       } catch {
@@ -96,11 +124,61 @@ function App() {
       } finally {
         setLoading(false)
       }
-    }, [message])
+    }, [
+      activeAssociation,
+      message,
+    ])
 
   useEffect(() => {
     void loadFiles()
   }, [loadFiles])
+
+  const handleApplyFilter =
+    (): void => {
+      const normalizedType =
+        filterRecordType.trim()
+
+      const normalizedId =
+        filterRecordId.trim()
+
+      const hasType =
+        normalizedType.length > 0
+
+      const hasId =
+        normalizedId.length > 0
+
+      if (!hasType && !hasId) {
+        setActiveAssociation(
+          undefined,
+        )
+
+        return
+      }
+
+      if (hasType !== hasId) {
+        void message.warning(
+          'Filtre için ilgili kayıt türü ve kimliği birlikte doldurulmalıdır.',
+        )
+
+        return
+      }
+
+      setActiveAssociation({
+        relatedRecordType:
+          normalizedType,
+        relatedRecordId:
+          normalizedId,
+      })
+    }
+
+  const handleClearFilter =
+    (): void => {
+      setFilterRecordType('')
+      setFilterRecordId('')
+      setActiveAssociation(
+        undefined,
+      )
+    }
 
   const handleDelete =
     async (
@@ -127,9 +205,13 @@ function App() {
     ): Promise<void> => {
       try {
         const accessUrl =
-          await createPresignedUrl(id)
+          await createPresignedUrl(
+            id,
+          )
 
-        await copyText(accessUrl.url)
+        await copyText(
+          accessUrl.url,
+        )
 
         void message.success(
           'Beş dakikalık erişim bağlantısı kopyalandı.',
@@ -143,8 +225,12 @@ function App() {
 
   const totalSizeBytes =
     files.reduce(
-      (total, file) =>
-        total + file.sizeBytes,
+      (
+        total,
+        file,
+      ) =>
+        total +
+        file.sizeBytes,
       0,
     )
 
@@ -166,8 +252,9 @@ function App() {
               </Title>
 
               <Text className="brand-subtitle">
-                Güvenli ve yeniden kullanılabilir
-                dosya yönetimi
+                Güvenli ve yeniden
+                kullanılabilir dosya
+                yönetimi
               </Text>
             </div>
           </Space>
@@ -182,10 +269,12 @@ function App() {
             </Title>
 
             <Paragraph type="secondary">
-              Dosyaları sürükleyip bırakın,
-              PostgreSQL metadata bilgilerini
-              görüntüleyin ve MinIO üzerinden
-              indirin veya önizleyin.
+              Dosyaları sürükleyip
+              bırakın, PostgreSQL
+              metadata bilgilerini
+              görüntüleyin ve MinIO
+              üzerinden indirin veya
+              önizleyin.
             </Paragraph>
           </section>
 
@@ -196,7 +285,7 @@ function App() {
             >
               <Card>
                 <Statistic
-                  title="Toplam dosya"
+                  title="Gösterilen dosya"
                   value={files.length}
                 />
               </Card>
@@ -210,7 +299,7 @@ function App() {
                 <Statistic
                   precision={2}
                   suffix="MB"
-                  title="Toplam boyut"
+                  title="Gösterilen toplam boyut"
                   value={
                     totalSizeBytes /
                     1024 /
@@ -226,7 +315,9 @@ function App() {
             title="Dosya yükle"
           >
             <FileUploadDropzone
-              onUploaded={loadFiles}
+              onUploaded={
+                loadFiles
+              }
             />
           </Card>
 
@@ -234,7 +325,9 @@ function App() {
             className="section-card"
             extra={
               <Button
-                icon={<ReloadOutlined />}
+                icon={
+                  <ReloadOutlined />
+                }
                 loading={loading}
                 onClick={() => {
                   void loadFiles()
@@ -245,6 +338,106 @@ function App() {
             }
             title="Dosyalar"
           >
+            <div className="filter-panel">
+              <div className="filter-fields">
+                <div className="field-group">
+                  <Text strong>
+                    İlgili kayıt türü
+                  </Text>
+
+                  <Input
+                    allowClear
+                    maxLength={100}
+                    onChange={(event) => {
+                      setFilterRecordType(
+                        event.target.value,
+                      )
+                    }}
+                    onPressEnter={
+                      handleApplyFilter
+                    }
+                    placeholder="Örnek: Student"
+                    value={
+                      filterRecordType
+                    }
+                  />
+                </div>
+
+                <div className="field-group">
+                  <Text strong>
+                    İlgili kayıt kimliği
+                  </Text>
+
+                  <Input
+                    allowClear
+                    maxLength={255}
+                    onChange={(event) => {
+                      setFilterRecordId(
+                        event.target.value,
+                      )
+                    }}
+                    onPressEnter={
+                      handleApplyFilter
+                    }
+                    placeholder="Örnek: 42 veya UUID"
+                    value={
+                      filterRecordId
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="filter-actions">
+                <Button
+                  icon={
+                    <FilterOutlined />
+                  }
+                  onClick={
+                    handleApplyFilter
+                  }
+                  type="primary"
+                >
+                  Filtrele
+                </Button>
+
+                <Button
+                  disabled={
+                    !activeAssociation &&
+                    filterRecordType
+                      .length === 0 &&
+                    filterRecordId
+                      .length === 0
+                  }
+                  icon={
+                    <ClearOutlined />
+                  }
+                  onClick={
+                    handleClearFilter
+                  }
+                >
+                  Temizle
+                </Button>
+
+                {activeAssociation ? (
+                  <Tag>
+                    {
+                      activeAssociation
+                        .relatedRecordType
+                    }
+                    {' · '}
+                    {
+                      activeAssociation
+                        .relatedRecordId
+                    }
+                  </Tag>
+                ) : (
+                  <Text type="secondary">
+                    Tüm dosyalar
+                  </Text>
+                )}
+              </div>
+            </div>
+
             <Flex vertical>
               <FileTable
                 files={files}
@@ -252,7 +445,9 @@ function App() {
                 onCopyLink={
                   handleCopyLink
                 }
-                onDelete={handleDelete}
+                onDelete={
+                  handleDelete
+                }
               />
             </Flex>
           </Card>
@@ -260,8 +455,8 @@ function App() {
       </Content>
 
       <Footer className="app-footer">
-        MinIO · ASP.NET Core · PostgreSQL ·
-        React
+        MinIO · ASP.NET Core ·
+        PostgreSQL · React
       </Footer>
     </Layout>
   )

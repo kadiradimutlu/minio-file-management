@@ -99,6 +99,8 @@ public sealed class FilesController : ControllerBase
                 contentType,
                 file.Length,
                 content,
+                request.RelatedRecordType,
+                request.RelatedRecordId,
                 cancellationToken);
 
         return CreatedAtAction(
@@ -114,11 +116,16 @@ public sealed class FilesController : ControllerBase
     [ProducesResponseType(
         typeof(IReadOnlyList<StoredFileDto>),
         StatusCodes.Status200OK)]
+    [ProducesResponseType(
+        StatusCodes.Status400BadRequest)]
     public async Task<
         ActionResult<IReadOnlyList<StoredFileDto>>> List(
+        [FromQuery] ListFilesQuery query,
         CancellationToken cancellationToken)
     {
         var files = await _fileService.ListAsync(
+            query.RelatedRecordType,
+            query.RelatedRecordId,
             cancellationToken);
 
         return Ok(files);

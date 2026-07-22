@@ -35,10 +35,28 @@ public sealed class StoredFileRepository :
     }
 
     public async Task<IReadOnlyList<StoredFile>> ListAsync(
+        string? relatedRecordType = null,
+        string? relatedRecordId = null,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.StoredFiles
-            .AsNoTracking()
+        IQueryable<StoredFile> query =
+            _dbContext.StoredFiles
+                .AsNoTracking();
+
+        if (
+            relatedRecordType is not null &&
+            relatedRecordId is not null
+        )
+        {
+            query = query.Where(
+                storedFile =>
+                    storedFile.RelatedRecordType ==
+                        relatedRecordType &&
+                    storedFile.RelatedRecordId ==
+                        relatedRecordId);
+        }
+
+        return await query
             .OrderByDescending(
                 storedFile => storedFile.CreatedAtUtc)
             .ToListAsync(cancellationToken);
