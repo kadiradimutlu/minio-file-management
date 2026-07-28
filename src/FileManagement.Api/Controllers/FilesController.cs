@@ -3,11 +3,13 @@ using FileManagement.Api.Options;
 using FileManagement.Api.Results;
 using FileManagement.Application.Files;
 using FileManagement.Application.Files.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace FileManagement.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/files")]
 public sealed class FilesController : ControllerBase
