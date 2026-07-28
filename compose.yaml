@@ -58,6 +58,20 @@ services:
     networks:
       - file-management-network
 
+  seq:
+    image: "datalust/seq:${SEQ_VERSION:-2026.1}"
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINUSERNAME: "admin"
+      SEQ_FIRSTRUN_ADMINPASSWORD: "${SEQ_ADMIN_PASSWORD:?SEQ_ADMIN_PASSWORD is required}"
+    ports:
+      - "127.0.0.1:${SEQ_PORT:-5341}:80"
+    volumes:
+      - seq-data:/data
+    mem_limit: 512m
+    networks:
+      - file-management-network
+
   api:
     build:
       context: .
@@ -74,6 +88,7 @@ services:
       Minio__BucketName: "${MINIO_BUCKET_NAME:-files}"
       Minio__UseSsl: "false"
       Minio__PublicUseSsl: "false"
+      Seq__ServerUrl: "http://seq:80"
       Cors__AllowedOrigins__0: "http://127.0.0.1:${WEB_PORT:-8080}"
       Cors__AllowedOrigins__1: "http://localhost:${WEB_PORT:-8080}"
     ports:
@@ -83,6 +98,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      seq:
+        condition: service_started
     healthcheck:
       test:
         [
@@ -124,6 +141,7 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  seq-data:
 
 networks:
   file-management-network:
