@@ -1,4 +1,5 @@
 using FileManagement.Identity.Api.Middleware;
+using FileManagement.Identity.Api.OpenApi;
 using FileManagement.Identity.Infrastructure;
 using FileManagement.Identity.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -79,8 +80,19 @@ builder.Services
     .AddIdentityInfrastructure(
         builder.Configuration);
 
+
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+
+builder.Services.AddOpenApi(
+    options =>
+    {
+        options.AddDocumentTransformer<
+            BearerSecuritySchemeTransformer>();
+
+        options.AddOperationTransformer<
+            AuthorizationOperationTransformer>();
+    });
+
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();

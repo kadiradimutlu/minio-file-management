@@ -75,8 +75,7 @@ public static class DependencyInjection
                 IdentityRole<Guid>>()
             .AddSignInManager()
             .AddEntityFrameworkStores<
-                IdentityDbContext>()
-            .AddDefaultTokenProviders();
+                IdentityDbContext>();
 
         services.AddOptions<JwtOptions>()
             .Bind(
