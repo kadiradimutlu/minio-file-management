@@ -1,36 +1,145 @@
 # MinIO File Management
 
-MinIO Object Storage, PostgreSQL, ASP.NET Core ve React kullanılarak geliştirilmiş yeniden kullanılabilir dosya yönetim modülü.
+MinIO Object Storage, PostgreSQL, ASP.NET Core Identity, JWT, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
 
-Dosyaların fiziksel içerikleri MinIO üzerinde, dosya metadata bilgileri ise PostgreSQL üzerinde saklanır.
+Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata bilgileri PostgreSQL içindeki `file_management` veritabanında, kullanıcı ve rol bilgileri ise ayrı `identity_management` veritabanında saklanır.
 
 ## Özellikler
+
+### Dosya yönetimi
 
 - Tekli dosya yükleme API'si
 - React arayüzünden çoklu dosya seçimi ve yükleme
 - Sürükle-bırak dosya yükleme
 - Yükleme ilerleme göstergesi
-- Dosya listeleme ve detay görüntüleme
-- Dosya indirme
-- PDF ve görseller için tarayıcı içi önizleme
+- Dosya listeleme ve metadata detayını görüntüleme
+- JWT doğrulamalı dosya indirme
+- PDF ve görseller için JWT doğrulamalı tarayıcı önizlemesi
 - Dosya silme
 - Süreli MinIO erişim bağlantısı oluşturma
 - Dosya boyutu, uzantı ve content type doğrulaması
-- Metadata bilgilerinin PostgreSQL üzerinde saklanması
-- Dosya içeriklerinin private MinIO bucket üzerinde saklanması
-- Metadata kaydı başarısız olursa MinIO nesnesinin geri alınması
+- Metadata kaydı başarısız olursa MinIO nesnesini geri alma
 - İlgili kayıt türü ve kimliğiyle dosya ilişkilendirme
 - İlgili kayda göre dosya filtreleme
-- OpenAPI dokümanı ve interaktif Swagger UI
-- Docker Compose ile dört servisli lokal çalışma ortamı
-- GitHub Actions CI doğrulamaları
+
+### Kimlik ve erişim yönetimi
+
+- Ayrı Identity API ve Identity persistence katmanı
+- ASP.NET Core Identity kullanıcı ve rol yönetimi
+- PostgreSQL üzerinde ayrı Identity veritabanı
+- Parola hashleme ve başarısız giriş kilitleme desteği
+- JWT access token üretimi
+- Issuer, audience, imza ve süre doğrulaması
+- `User` ve `Admin` rolleri
+- Role dayalı admin endpoint'i
+- File API endpoint'lerinin Bearer authentication ile korunması
+- OpenAPI ve Swagger üzerinde Bearer authorization desteği
+- React login ve logout akışı
+- Sekme bazlı `sessionStorage` oturumu
+- Axios Bearer interceptor'ı
+- Token süresi dolduğunda veya `401` alındığında otomatik logout
+
+### Gözlemlenebilirlik
+
+- Serilog ile yapılandırılmış loglama
+- Console ve merkezi Seq log hedefleri
+- Uygulama ve ortam bilgileriyle zenginleştirilmiş loglar
+- `X-Correlation-ID` request/response desteği
+- HTTP request süreleri ve durum kodları
+- File API loglarında kullanıcı kimliği ve kullanıcı adı
+- Health endpoint'leri
+
+### Altyapı ve kalite
+
+- OpenAPI 3.1 dokümanları
+- İnteraktif Swagger UI
+- Docker Compose ile lokal çalışma ortamı
+- Nginx reverse proxy
+- GitHub Actions CI
 - xUnit birim testleri
+- NuGet ve npm güvenlik denetimleri
+
+## Mimari
+
+~~~text
+Browser
+   |
+   v
+Nginx Web :8080
+   |
+   |-- /api/auth/*  --> Identity API :8080
+   |                     |
+   |                     `--> identity_management
+   |
+   `-- /api/files/* --> File API :8080
+                         |
+                         |--> file_management
+                         `--> MinIO private bucket
+
+Identity API ----\
+                  >---- Serilog ----> Seq
+File API --------/
+~~~
+
+Identity API ve File API ayrı executable, Docker image, health endpoint'i, log kimliği ve veri sorumluluğuna sahiptir.
+
+Her iki servis aynı PostgreSQL container'ını kullanır; ancak ayrı mantıksal veritabanlarına sahiptir:
+
+~~~text
+file_management
+identity_management
+~~~
+
+File API, her dosya isteğinde Identity API'ye çağrı yapmaz. Identity API tarafından imzalanan JWT'yi issuer, audience, süre ve imza bilgileriyle yerel olarak doğrular.
+
+### Repository yapısı
+
+~~~text
+src/
+├── FileManagement.Api
+├── FileManagement.Application
+├── FileManagement.Domain
+├── FileManagement.Infrastructure
+├── FileManagement.Identity.Api
+├── FileManagement.Identity.Infrastructure
+└── FileManagement.Web
+
+tests/
+├── FileManagement.UnitTests
+└── FileManagement.Identity.UnitTests
+
+docs/
+├── requirements-evidence.md
+└── verification-report.md
+~~~
+
+Katmanların sorumlulukları:
+
+- `FileManagement.Domain`: Dosya entity'leri ve domain kuralları
+- `FileManagement.Application`: Dosya servisleri, DTO'lar ve soyutlamalar
+- `FileManagement.Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
+- `FileManagement.Api`: Korumalı dosya endpoint'leri, JWT doğrulaması, OpenAPI ve Swagger
+- `FileManagement.Identity.Infrastructure`: Identity persistence, kullanıcı/rol yönetimi ve JWT üretimi
+- `FileManagement.Identity.Api`: Register, login, current user ve admin endpoint'leri
+- `FileManagement.Web`: React kullanıcı arayüzü, oturum yönetimi ve API istemcileri
+- `FileManagement.UnitTests`: Domain ve application servis testleri
+- `FileManagement.Identity.UnitTests`: JWT üretim ve doğrulama testleri
+
+## Authentication Akışı
+
+1. Kullanıcı `/api/auth/login` endpoint'ine e-posta ve parolasını gönderir.
+2. Identity API kullanıcı bilgilerini ASP.NET Core Identity üzerinden doğrular.
+3. Başarılı girişte kullanıcı kimliği, e-posta ve rollerini taşıyan JWT üretilir.
+4. React uygulaması token ve kullanıcı bilgilerini `sessionStorage` içinde saklar.
+5. Axios interceptor korumalı isteklere `Authorization: Bearer <token>` header'ını ekler.
+6. File API token'ın issuer, audience, imza ve süresini doğrular.
+7. Token süresi dolduğunda veya API `401` döndürdüğünde frontend oturumu temizler.
+
+Varsayılan access token süresi ortam değişkeni üzerinden yapılandırılır ve örnek ortamda 60 dakikadır.
 
 ## İlgili Kayıt İlişkilendirmesi
 
 Bir dosya isteğe bağlı olarak başka bir sistem kaydıyla ilişkilendirilebilir.
-
-Kullanılan alanlar:
 
 | Alan | Maksimum uzunluk | Açıklama |
 |---|---:|---|
@@ -43,7 +152,7 @@ Kurallar:
 - İki alan da boş bırakılırsa dosya ilişkisiz yüklenir.
 - Yalnızca bir alan verilirse API `400 Bad Request` döndürür.
 - Listeleme endpoint'i aynı alanlarla filtrelenebilir.
-- PostgreSQL üzerinde iki alanı kapsayan birleşik bir index bulunur.
+- PostgreSQL üzerinde iki alanı kapsayan birleşik index bulunur.
 
 ## Teknolojiler
 
@@ -51,9 +160,13 @@ Kurallar:
 
 - .NET 10
 - ASP.NET Core Web API
+- ASP.NET Core Identity
+- JWT Bearer Authentication
 - Entity Framework Core
 - PostgreSQL
 - MinIO .NET SDK
+- Serilog
+- Seq
 - OpenAPI
 - Swagger UI
 - xUnit
@@ -73,33 +186,6 @@ Kurallar:
 - Nginx
 - GitHub Actions
 
-## Mimari
-
-~~~text
-src/
-├── FileManagement.Api
-├── FileManagement.Application
-├── FileManagement.Domain
-├── FileManagement.Infrastructure
-└── FileManagement.Web
-
-tests/
-└── FileManagement.UnitTests
-
-docs/
-├── requirements-evidence.md
-└── verification-report.md
-~~~
-
-Katmanların sorumlulukları:
-
-- `Domain`: Entity'ler ve domain kuralları
-- `Application`: Servisler, DTO'lar ve soyutlamalar
-- `Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
-- `Api`: HTTP endpoint'leri, doğrulamalar, OpenAPI ve Swagger
-- `Web`: React ve Ant Design kullanıcı arayüzü
-- `UnitTests`: Domain ve application servis testleri
-
 ## Hızlı Başlangıç
 
 ### Gereksinimler
@@ -116,7 +202,15 @@ Katmanların sorumlulukları:
 Copy-Item ".env.example" ".env"
 ~~~
 
-`.env` içindeki PostgreSQL ve MinIO parolalarını lokal kullanım için güvenli değerlerle değiştirin.
+`.env` içindeki aşağıdaki değerleri güvenli lokal değerlerle değiştirin:
+
+- `POSTGRES_PASSWORD`
+- `MINIO_ROOT_PASSWORD`
+- `SEQ_ADMIN_PASSWORD`
+- `JWT_SIGNING_KEY`
+- `IDENTITY_ADMIN_PASSWORD`
+
+`JWT_SIGNING_KEY` en az 32 karakterden oluşan rastgele bir değer olmalıdır.
 
 `.env` dosyası Git tarafından takip edilmez.
 
@@ -136,29 +230,68 @@ Servisleri görüntüleme:
 ~~~powershell
 docker compose `
     --env-file ".env" `
-    ps
+    ps `
+    --all
 ~~~
 
-API başlangıcında:
+Başlangıç sırasında:
 
-- Entity Framework Core migration'ları uygulanır.
+- File API migration'ları uygulanır.
+- Identity migration'ları uygulanır.
+- `User` ve `Admin` rolleri hazırlanır.
+- İlk admin hesabı gerektiğinde oluşturulur.
 - MinIO bucket'ı hazırlanır.
+- Identity veritabanı yoksa `identity-db-init` işi tarafından oluşturulur.
+
+## Docker Compose Servisleri
+
+| Servis | Sorumluluk |
+|---|---|
+| `postgres` | File ve Identity mantıksal veritabanları |
+| `identity-db-init` | Identity veritabanını hazırlayan tek seferlik init işi |
+| `minio` | Dosya içeriği depolama |
+| `seq` | Merkezi yapılandırılmış loglar |
+| `identity-api` | Kullanıcı, rol ve JWT işlemleri |
+| `api` | Dosya yönetimi |
+| `web` | React uygulaması ve Nginx reverse proxy |
 
 ## Lokal Adresler
 
 | Servis | Adres |
 |---|---|
 | Web uygulaması | `http://127.0.0.1:8080` |
-| API health | `http://127.0.0.1:5080/health` |
-| Swagger UI | `http://127.0.0.1:5080/swagger` |
-| OpenAPI JSON | `http://127.0.0.1:5080/openapi/v1.json` |
+| Web health | `http://127.0.0.1:8080/health` |
+| File API health | `http://127.0.0.1:5080/health` |
+| File API Swagger | `http://127.0.0.1:5080/swagger` |
+| File API OpenAPI | `http://127.0.0.1:5080/openapi/v1.json` |
+| Identity API health | `http://127.0.0.1:5090/health` |
+| Identity API Swagger | `http://127.0.0.1:5090/swagger` |
+| Identity API OpenAPI | `http://127.0.0.1:5090/openapi/v1.json` |
+| Seq | `http://127.0.0.1:5341` |
 | MinIO API | `http://127.0.0.1:9000` |
 | MinIO Console | `http://127.0.0.1:9001` |
 | PostgreSQL | `127.0.0.1:5432` |
 
-Web container'ındaki Nginx, `/api` isteklerini API container'ına yönlendirir.
+Nginx yönlendirmeleri:
 
-## API Endpoint'leri
+~~~text
+/api/auth/*  -> identity-api
+/api/*       -> api
+~~~
+
+## Identity API Endpoint'leri
+
+| Metot | Endpoint | Erişim | Açıklama |
+|---|---|---|---|
+| `POST` | `/api/auth/register` | Anonim | Yeni `User` hesabı oluşturur |
+| `POST` | `/api/auth/login` | Anonim | JWT access token üretir |
+| `GET` | `/api/auth/me` | Bearer | Aktif kullanıcı ve roller |
+| `GET` | `/api/auth/admin/ping` | `Admin` | Role dayalı erişim testi |
+| `GET` | `/health` | Anonim | Identity sağlık kontrolü |
+
+## File API Endpoint'leri
+
+Bütün `/api/files` endpoint'leri geçerli Bearer token gerektirir.
 
 | Metot | Endpoint | Açıklama |
 |---|---|---|
@@ -169,16 +302,48 @@ Web container'ındaki Nginx, `/api` isteklerini API container'ına yönlendirir.
 | `GET` | `/api/files/{id}/preview` | Desteklenen dosyayı önizleme |
 | `GET` | `/api/files/{id}/presigned-url` | Süreli MinIO URL'si oluşturma |
 | `DELETE` | `/api/files/{id}` | Dosyayı ve metadata kaydını silme |
-| `GET` | `/health` | API sağlık kontrolü |
+| `GET` | `/health` | Anonim File API sağlık kontrolü |
 
 ## API Kullanım Örnekleri
+
+### Admin hesabıyla giriş
+
+~~~powershell
+$loginResponse = Invoke-RestMethod `
+    -Method Post `
+    -Uri "http://127.0.0.1:8080/api/auth/login" `
+    -ContentType "application/json" `
+    -Body (
+        @{
+            email = "admin@filemanagement.local"
+            password = "replace-with-your-local-admin-password"
+        } |
+        ConvertTo-Json
+    )
+
+$accessToken = $loginResponse.accessToken
+
+$headers = @{
+    Authorization = "Bearer $accessToken"
+}
+~~~
+
+### Aktif kullanıcıyı görüntüleme
+
+~~~powershell
+Invoke-RestMethod `
+    -Method Get `
+    -Uri "http://127.0.0.1:8080/api/auth/me" `
+    -Headers $headers
+~~~
 
 ### İlişkisiz dosya yükleme
 
 ~~~powershell
 curl.exe `
     --request POST `
-    "http://127.0.0.1:5080/api/files" `
+    "http://127.0.0.1:8080/api/files" `
+    --header "Authorization: Bearer $accessToken" `
     --form "file=@C:\Temp\report.pdf;type=application/pdf"
 ~~~
 
@@ -187,7 +352,8 @@ curl.exe `
 ~~~powershell
 curl.exe `
     --request POST `
-    "http://127.0.0.1:5080/api/files" `
+    "http://127.0.0.1:8080/api/files" `
+    --header "Authorization: Bearer $accessToken" `
     --form "file=@C:\Temp\report.pdf;type=application/pdf" `
     --form "relatedRecordType=Student" `
     --form "relatedRecordId=42"
@@ -198,7 +364,8 @@ curl.exe `
 ~~~powershell
 Invoke-RestMethod `
     -Method Get `
-    -Uri "http://127.0.0.1:5080/api/files?relatedRecordType=Student&relatedRecordId=42"
+    -Uri "http://127.0.0.1:8080/api/files?relatedRecordType=Student&relatedRecordId=42" `
+    -Headers $headers
 ~~~
 
 ## Varsayılan Dosya Doğrulamaları
@@ -224,7 +391,12 @@ Backend ayrıca izin verilen uzantıları ve content type değerlerini yapıland
 ### Backend
 
 ~~~powershell
-dotnet restore "MinioFileManagement.sln"
+dotnet restore `
+    "MinioFileManagement.sln" `
+    --force-evaluate `
+    -p:NuGetAudit=true `
+    -p:NuGetAuditMode=all `
+    -warnaserror
 
 dotnet build `
     "MinioFileManagement.sln" `
@@ -245,11 +417,12 @@ Push-Location "src\FileManagement.Web"
 npm ci
 npm run lint
 npm run build
+npm audit --audit-level=high
 
 Pop-Location
 ~~~
 
-### EF Core model kontrolü
+### File database EF Core model kontrolü
 
 ~~~powershell
 dotnet ef migrations has-pending-model-changes `
@@ -259,6 +432,17 @@ dotnet ef migrations has-pending-model-changes `
     "src\FileManagement.Api\FileManagement.Api.csproj"
 ~~~
 
+### Identity database EF Core model kontrolü
+
+~~~powershell
+dotnet ef migrations has-pending-model-changes `
+    --project `
+    "src\FileManagement.Identity.Infrastructure\FileManagement.Identity.Infrastructure.csproj" `
+    --startup-project `
+    "src\FileManagement.Identity.Api\FileManagement.Identity.Api.csproj" `
+    --context IdentityDbContext
+~~~
+
 ## CI
 
 GitHub Actions aşağıdaki işleri çalıştırır.
@@ -266,8 +450,8 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 ### Backend
 
 - NuGet restore ve güvenlik denetimi
-- Release build
-- xUnit testleri
+- Bütün solution için Release build
+- File ve Identity birim testleri
 - Zafiyetli NuGet paket raporu
 
 ### Frontend
@@ -281,7 +465,7 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 
 - Docker Compose yapılandırma kontrolü
 - Servis listesinin doğrulanması
-- API ve Web image build işlemleri
+- File API, Identity API ve Web image build işlemleri
 - Oluşturulan image'ların doğrulanması
 
 ## Servisleri Durdurma
@@ -294,7 +478,7 @@ docker compose `
     down
 ~~~
 
-PostgreSQL ve MinIO volume verilerini de silerek:
+PostgreSQL, MinIO ve Seq volume verilerini de silerek:
 
 ~~~powershell
 docker compose `
@@ -303,25 +487,29 @@ docker compose `
     --volumes
 ~~~
 
-`--volumes` seçeneği lokal PostgreSQL ve MinIO verilerini kalıcı olarak siler.
+`--volumes` seçeneği lokal PostgreSQL, MinIO ve Seq verilerini kalıcı olarak siler.
 
 ## Güvenlik ve Üretim Notları
 
-Bu repository bir dosya yönetim modülü ve lokal çalışma örneğidir.
+Mevcut uygulamada JWT authentication, temel role dayalı authorization, parola hashleme, lockout, private MinIO bucket ve merkezi loglama uygulanmıştır.
 
 Üretim ortamından önce ayrıca değerlendirilmesi gereken konular:
 
-- Authentication ve authorization
-- Kullanıcı veya tenant izolasyonu
+- HTTPS zorunluluğu
+- JWT signing key'in secret manager veya key vault içinde tutulması
+- Signing key rotasyonu veya asimetrik imzalama
+- Refresh token ya da BFF/HttpOnly cookie yaklaşımı
+- Public registration politikasının sınırlandırılması
+- E-posta doğrulama ve parola sıfırlama akışları
+- Kullanıcı veya tenant bazlı dosya izolasyonu
 - Zararlı dosya taraması
 - Rate limiting
-- HTTPS ve reverse proxy güvenliği
-- Secret yönetimi
+- CSRF ve XSS risk değerlendirmesi
 - Yedekleme ve geri yükleme
-- Loglama, gözlemlenebilirlik ve alarm mekanizmaları
+- Seq alarm ve retention politikaları
 - MinIO lisans ve destek koşulları
 
-MinIO Community image'ı sabitlenmiş kaynak kod tag'inden oluşturulur:
+MinIO Community binary'si sabitlenmiş kaynak kod tag'inden oluşturulur:
 
 ~~~text
 RELEASE.2025-10-15T17-29-55Z
