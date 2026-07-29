@@ -1,6 +1,14 @@
-@FileManagement.Api_HostAddress = http://localhost:5148
+@FileManagementApi_HostAddress = http://127.0.0.1:5080
+@AccessToken = replace-with-a-valid-jwt-access-token
 
-GET {{FileManagement.Api_HostAddress}}/weatherforecast/
+### Anonymous health check
+
+GET {{FileManagementApi_HostAddress}}/health
+Accept: text/plain
+
+### Protected file list
+
+GET {{FileManagementApi_HostAddress}}/api/files
 Accept: application/json
-
-###
+Authorization: Bearer {{AccessToken}}
+X-Correlation-ID: local-http-file-list

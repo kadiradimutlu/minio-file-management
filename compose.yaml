@@ -25,6 +25,46 @@ services:
     networks:
       - file-management-network
 
+  identity-db-init:
+    image: postgres:18.4-alpine
+    environment:
+      PGPASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
+      IDENTITY_POSTGRES_DB: "${IDENTITY_POSTGRES_DB:-identity_management}"
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -eu
+
+        until pg_isready \
+          -h postgres \
+          -U "$$POSTGRES_USER" \
+          -d postgres
+        do
+          sleep 1
+        done
+
+        database_exists="$$(psql \
+          -h postgres \
+          -U "$$POSTGRES_USER" \
+          -d postgres \
+          -tAc "SELECT 1 FROM pg_database WHERE datname = '$$IDENTITY_POSTGRES_DB'")"
+
+        if [ "$$database_exists" != "1" ]; then
+          createdb \
+            -h postgres \
+            -U "$$POSTGRES_USER" \
+            "$$IDENTITY_POSTGRES_DB"
+        fi
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - file-management-network
+
   minio:
     build:
       context: .
@@ -72,6 +112,45 @@ services:
     networks:
       - file-management-network
 
+  identity-api:
+    build:
+      context: .
+      dockerfile: docker/identity-api/Dockerfile
+    image: minio-file-management/identity-api:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__IdentityPostgreSql: "Host=postgres;Port=5432;Database=${IDENTITY_POSTGRES_DB:-identity_management};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Jwt__Issuer: "${JWT_ISSUER:-file-management-identity}"
+      Jwt__Audience: "${JWT_AUDIENCE:-file-management-services}"
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY is required}"
+      Jwt__ExpirationMinutes: "${JWT_EXPIRATION_MINUTES:-60}"
+      IdentityAdmin__Email: "${IDENTITY_ADMIN_EMAIL:?IDENTITY_ADMIN_EMAIL is required}"
+      IdentityAdmin__Password: "${IDENTITY_ADMIN_PASSWORD:?IDENTITY_ADMIN_PASSWORD is required}"
+      Seq__ServerUrl: "http://seq:80"
+      Cors__AllowedOrigins__0: "http://127.0.0.1:${WEB_PORT:-8080}"
+      Cors__AllowedOrigins__1: "http://localhost:${WEB_PORT:-8080}"
+    ports:
+      - "127.0.0.1:${IDENTITY_API_PORT:-5090}:8080"
+    depends_on:
+      identity-db-init:
+        condition: service_completed_successfully
+      seq:
+        condition: service_started
+    mem_limit: 256m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --silent http://127.0.0.1:8080/health > /dev/null || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - file-management-network
+
   api:
     build:
       context: .
@@ -88,6 +167,9 @@ services:
       Minio__BucketName: "${MINIO_BUCKET_NAME:-files}"
       Minio__UseSsl: "false"
       Minio__PublicUseSsl: "false"
+      Jwt__Issuer: "${JWT_ISSUER:-file-management-identity}"
+      Jwt__Audience: "${JWT_AUDIENCE:-file-management-services}"
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY is required}"
       Seq__ServerUrl: "http://seq:80"
       Cors__AllowedOrigins__0: "http://127.0.0.1:${WEB_PORT:-8080}"
       Cors__AllowedOrigins__1: "http://localhost:${WEB_PORT:-8080}"
@@ -124,6 +206,8 @@ services:
       - "127.0.0.1:${WEB_PORT:-8080}:80"
     depends_on:
       api:
+        condition: service_healthy
+      identity-api:
         condition: service_healthy
     healthcheck:
       test:

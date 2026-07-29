@@ -126,15 +126,17 @@ jobs:
           config
           --services
 
-      - name: Build API and Web images
+      - name: Build application images
         run: >
           docker compose
           --env-file .env.example
           build
           api
+          identity-api
           web
 
       - name: Inspect application images
         run: |
           docker image inspect minio-file-management/api:local
+          docker image inspect minio-file-management/identity-api:local
           docker image inspect minio-file-management/web:local

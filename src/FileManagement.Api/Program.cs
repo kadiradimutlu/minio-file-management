@@ -1,10 +1,15 @@
+using System.Security.Claims;
+using System.Text;
 using FileManagement.Api.Middleware;
+using FileManagement.Api.OpenApi;
 using FileManagement.Api.Options;
 using FileManagement.Application;
 using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Infrastructure;
 using FileManagement.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Serilog.Events;
 
@@ -51,9 +56,11 @@ builder.Services.AddSerilog(
         }
     });
 
-var allowedOrigins = builder.Configuration
-    .GetSection("Cors:AllowedOrigins")
-    .Get<string[]>() ?? [];
+var allowedOrigins =
+    builder.Configuration
+        .GetSection(
+            "Cors:AllowedOrigins")
+        .Get<string[]>() ?? [];
 
 if (allowedOrigins.Length == 0)
 {
@@ -69,7 +76,8 @@ builder.Services.AddCors(
             policy =>
             {
                 policy
-                    .WithOrigins(allowedOrigins)
+                    .WithOrigins(
+                        allowedOrigins)
                     .AllowAnyHeader()
                     .AllowAnyMethod();
             });
@@ -93,13 +101,101 @@ builder.Services.AddOptions<FileUploadOptions>()
         "FileUpload:AllowedContentTypes must not be empty.")
     .ValidateOnStart();
 
+var jwtSection =
+    builder.Configuration.GetSection(
+        JwtOptions.SectionName);
+
+var jwtOptions =
+    jwtSection.Get<JwtOptions>() ??
+    new JwtOptions();
+
+if (
+    string.IsNullOrWhiteSpace(
+        jwtOptions.Issuer) ||
+    string.IsNullOrWhiteSpace(
+        jwtOptions.Audience) ||
+    jwtOptions.SigningKey.Length < 32
+)
+{
+    throw new InvalidOperationException(
+        "JWT validation configuration is invalid.");
+}
+
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(jwtSection)
+    .Validate(
+        options =>
+            !string.IsNullOrWhiteSpace(
+                options.Issuer),
+        "Jwt:Issuer is required.")
+    .Validate(
+        options =>
+            !string.IsNullOrWhiteSpace(
+                options.Audience),
+        "Jwt:Audience is required.")
+    .Validate(
+        options =>
+            options.SigningKey.Length >= 32,
+        "Jwt:SigningKey must contain at least 32 characters.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddAuthentication(
+        JwtBearerDefaults
+            .AuthenticationScheme)
+    .AddJwtBearer(
+        options =>
+        {
+            options.MapInboundClaims =
+                false;
+
+            options.TokenValidationParameters =
+                new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer =
+                        jwtOptions.Issuer,
+                    ValidateAudience = true,
+                    ValidAudience =
+                        jwtOptions.Audience,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey =
+                        true,
+                    IssuerSigningKey =
+                        new SymmetricSecurityKey(
+                            Encoding.UTF8
+                                .GetBytes(
+                                    jwtOptions
+                                        .SigningKey)),
+                    ClockSkew =
+                        TimeSpan.FromSeconds(
+                            30),
+                    NameClaimType =
+                        ClaimTypes.Name,
+                    RoleClaimType =
+                        ClaimTypes.Role
+                };
+        });
+
+builder.Services.AddAuthorization();
+
 builder.Services.AddApplication();
 
 builder.Services.AddInfrastructure(
     builder.Configuration);
 
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+
+builder.Services.AddOpenApi(
+    options =>
+    {
+        options.AddDocumentTransformer<
+            BearerSecuritySchemeTransformer>();
+
+        options.AddOperationTransformer<
+            AuthorizationOperationTransformer>();
+    });
+
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -177,7 +273,8 @@ app.UseSerilogRequestLogging(
 
                 if (
                     httpContext.Request.Path
-                        .StartsWithSegments("/health")
+                        .StartsWithSegments(
+                            "/health")
                 )
                 {
                     return LogEventLevel.Debug;
@@ -204,6 +301,20 @@ app.UseSerilogRequestLogging(
                 diagnosticContext.Set(
                     "CorrelationId",
                     httpContext.TraceIdentifier);
+
+                diagnosticContext.Set(
+                    "UserId",
+                    httpContext.User
+                        .FindFirstValue(
+                            ClaimTypes.NameIdentifier) ??
+                    "anonymous");
+
+                diagnosticContext.Set(
+                    "UserName",
+                    httpContext.User
+                        .Identity
+                        ?.Name ??
+                    "anonymous");
             };
     });
 
@@ -221,6 +332,7 @@ app.UseSwaggerUI(
 app.UseCors(
     WebClientCorsPolicy);
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapOpenApi();

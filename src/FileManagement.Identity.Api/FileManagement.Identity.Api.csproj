@@ -4,11 +4,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UserSecretsId>7e1928c0-33f0-47b3-9578-1f0681747c8b</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -23,8 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FileManagement.Application\FileManagement.Application.csproj" />
-    <ProjectReference Include="..\FileManagement.Infrastructure\FileManagement.Infrastructure.csproj" />
+    <ProjectReference Include="..\FileManagement.Identity.Infrastructure\FileManagement.Identity.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
