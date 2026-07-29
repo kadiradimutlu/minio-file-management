@@ -28,6 +28,10 @@ public sealed class CorrelationIdMiddleware
         context.TraceIdentifier =
             correlationId;
 
+        context.Request.Headers[
+            HeaderName] =
+            correlationId;
+
         context.Response.OnStarting(
             () =>
             {
