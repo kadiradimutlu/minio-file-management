@@ -1,6 +1,6 @@
 # MinIO File Management
 
-MinIO Object Storage, PostgreSQL, ASP.NET Core Identity, JWT, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
+MinIO Object Storage, PostgreSQL, ASP.NET Core Identity, JWT, YARP API Gateway, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
 
 Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata bilgileri PostgreSQL içindeki `file_management` veritabanında, kullanıcı ve rol bilgileri ise ayrı `identity_management` veritabanında saklanır.
 
@@ -65,7 +65,11 @@ Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata 
 Browser
    |
    v
-Nginx Web :8080
+Web / Nginx :8080
+   |
+   | /api/*
+   v
+YARP Gateway :8080
    |
    |-- /api/auth/*  --> Identity API :8080
    |                     |
@@ -76,14 +80,29 @@ Nginx Web :8080
                          |--> file_management
                          `--> MinIO private bucket
 
-Identity API ----\
-                  >---- Serilog ----> Seq
-File API --------/
+Gateway ------\
+Identity API --+---- Serilog ----> Seq
+File API -----/
 ~~~
 
-Identity API ve File API ayrı executable, Docker image, health endpoint'i, log kimliği ve veri sorumluluğuna sahiptir.
+Nginx yalnızca statik React dosyalarını sunar ve bütün `/api/*` isteklerini YARP Gateway'e iletir. Servis seçimi Gateway içindeki route ve cluster yapılandırmasıyla yapılır.
 
-Her iki servis aynı PostgreSQL container'ını kullanır; ancak ayrı mantıksal veritabanlarına sahiptir:
+Gateway aşağıdaki route'ları yönetir:
+
+| Gateway route | Cluster | Hedef |
+|---|---|---|
+| `/api/auth/{**catch-all}` | `identityCluster` | Identity API |
+| `/api/files/{**catch-all}` | `fileCluster` | File API |
+
+Gateway authentication işlemini kendisi yapmaz. Bearer token ve diğer request header'larını ilgili downstream servise taşır. Identity API JWT üretir; File API ise JWT'yi yerel olarak doğrular.
+
+`X-Correlation-ID` değeri istemciden geldiyse korunur. Gönderilmediyse Gateway yeni bir correlation ID üretir, downstream request'e ekler ve response header'ında döndürür.
+
+File API ve Identity API host portları lokal tanılama ve Swagger erişimi için açık tutulur. Web uygulamasının normal API trafiği Gateway üzerinden geçer.
+
+Identity API, File API ve Gateway ayrı executable, Docker image, health endpoint'i ve log kimliğine sahiptir.
+
+Her iki veri servisi aynı PostgreSQL container'ını kullanır; ancak ayrı mantıksal veritabanlarına sahiptir:
 
 ~~~text
 file_management
@@ -100,6 +119,7 @@ src/
 ├── FileManagement.Application
 ├── FileManagement.Domain
 ├── FileManagement.Infrastructure
+├── FileManagement.Gateway
 ├── FileManagement.Identity.Api
 ├── FileManagement.Identity.Infrastructure
 └── FileManagement.Web
@@ -118,6 +138,7 @@ Katmanların sorumlulukları:
 - `FileManagement.Domain`: Dosya entity'leri ve domain kuralları
 - `FileManagement.Application`: Dosya servisleri, DTO'lar ve soyutlamalar
 - `FileManagement.Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
+- `FileManagement.Gateway`: YARP route/cluster yönetimi, API trafiği ve correlation ID başlangıç noktası
 - `FileManagement.Api`: Korumalı dosya endpoint'leri, JWT doğrulaması, OpenAPI ve Swagger
 - `FileManagement.Identity.Infrastructure`: Identity persistence, kullanıcı/rol yönetimi ve JWT üretimi
 - `FileManagement.Identity.Api`: Register, login, current user ve admin endpoint'leri
@@ -127,13 +148,16 @@ Katmanların sorumlulukları:
 
 ## Authentication Akışı
 
-1. Kullanıcı `/api/auth/login` endpoint'ine e-posta ve parolasını gönderir.
-2. Identity API kullanıcı bilgilerini ASP.NET Core Identity üzerinden doğrular.
-3. Başarılı girişte kullanıcı kimliği, e-posta ve rollerini taşıyan JWT üretilir.
-4. React uygulaması token ve kullanıcı bilgilerini `sessionStorage` içinde saklar.
-5. Axios interceptor korumalı isteklere `Authorization: Bearer <token>` header'ını ekler.
-6. File API token'ın issuer, audience, imza ve süresini doğrular.
-7. Token süresi dolduğunda veya API `401` döndürdüğünde frontend oturumu temizler.
+1. React uygulaması `/api/auth/login` isteğini Nginx üzerinden Gateway'e gönderir.
+2. Gateway isteği `identityCluster` üzerinden Identity API'ye yönlendirir.
+3. Identity API kullanıcı bilgilerini ASP.NET Core Identity üzerinden doğrular.
+4. Başarılı girişte kullanıcı kimliği, e-posta ve rollerini taşıyan JWT üretilir.
+5. React uygulaması token ve kullanıcı bilgilerini `sessionStorage` içinde saklar.
+6. Axios interceptor korumalı isteklere `Authorization: Bearer <token>` header'ını ekler.
+7. Nginx bütün `/api/*` trafiğini Gateway'e iletir.
+8. Gateway `/api/files/*` isteklerini File API'ye yönlendirirken Bearer token'ı korur.
+9. File API token'ın issuer, audience, imza ve süresini doğrular.
+10. Token süresi dolduğunda veya API `401` döndürdüğünde frontend oturumu temizler.
 
 Varsayılan access token süresi ortam değişkeni üzerinden yapılandırılır ve örnek ortamda 60 dakikadır.
 
@@ -181,6 +205,7 @@ Kurallar:
 
 ### Altyapı
 
+- YARP Reverse Proxy
 - Docker
 - Docker Compose
 - Nginx
@@ -252,8 +277,11 @@ Başlangıç sırasında:
 | `minio` | Dosya içeriği depolama |
 | `seq` | Merkezi yapılandırılmış loglar |
 | `identity-api` | Kullanıcı, rol ve JWT işlemleri |
-| `api` | Dosya yönetimi |
-| `web` | React uygulaması ve Nginx reverse proxy |
+| `api` | Dosya yönetimi ve JWT doğrulaması |
+| `gateway` | YARP route/cluster yönetimi ve merkezi API giriş noktası |
+| `web` | React uygulaması ve Nginx statik dosya/reverse proxy katmanı |
+
+`identity-db-init` başarılı çalıştıktan sonra `Exited (0)` durumunda kalması beklenen davranıştır.
 
 ## Lokal Adresler
 
@@ -261,6 +289,8 @@ Başlangıç sırasında:
 |---|---|
 | Web uygulaması | `http://127.0.0.1:8080` |
 | Web health | `http://127.0.0.1:8080/health` |
+| Gateway health | `http://127.0.0.1:5070/health` |
+| Gateway API giriş noktası | `http://127.0.0.1:5070/api` |
 | File API health | `http://127.0.0.1:5080/health` |
 | File API Swagger | `http://127.0.0.1:5080/swagger` |
 | File API OpenAPI | `http://127.0.0.1:5080/openapi/v1.json` |
@@ -272,12 +302,18 @@ Başlangıç sırasında:
 | MinIO Console | `http://127.0.0.1:9001` |
 | PostgreSQL | `127.0.0.1:5432` |
 
-Nginx yönlendirmeleri:
+Uygulama yönlendirme zinciri:
 
 ~~~text
-/api/auth/*  -> identity-api
-/api/*       -> api
+Web / Nginx
+   |
+   `-- /api/* --> Gateway
+                    |
+                    |-- /api/auth/*  --> Identity API
+                    `-- /api/files/* --> File API
 ~~~
+
+Vite geliştirme sunucusu da `/api/*` isteklerini `http://127.0.0.1:5070` adresindeki Gateway'e gönderir.
 
 ## Identity API Endpoint'leri
 
@@ -465,7 +501,7 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 
 - Docker Compose yapılandırma kontrolü
 - Servis listesinin doğrulanması
-- File API, Identity API ve Web image build işlemleri
+- File API, Identity API, Gateway ve Web image build işlemleri
 - Oluşturulan image'ların doğrulanması
 
 ## Servisleri Durdurma

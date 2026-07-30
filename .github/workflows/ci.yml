@@ -133,10 +133,12 @@ jobs:
           build
           api
           identity-api
+          gateway
           web
 
       - name: Inspect application images
         run: |
           docker image inspect minio-file-management/api:local
           docker image inspect minio-file-management/identity-api:local
+          docker image inspect minio-file-management/gateway:local
           docker image inspect minio-file-management/web:local
