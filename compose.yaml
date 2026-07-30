@@ -203,6 +203,27 @@ services:
     networks:
       - file-management-network
 
+  operations-worker:
+    build:
+      context: .
+      dockerfile: docker/operations-worker/Dockerfile
+    image: minio-file-management/operations-worker:local
+    environment:
+      DOTNET_ENVIRONMENT: "Production"
+      Kafka__BootstrapServers: "kafka:19092"
+      Kafka__Topic: "${KAFKA_FILE_OPERATIONS_TOPIC:-file-operations.v1}"
+      Kafka__GroupId: "operations-worker-v1"
+      Kafka__ClientId: "operations-worker"
+      Seq__ServerUrl: "http://seq:80"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      seq:
+        condition: service_started
+    mem_limit: 256m
+    networks:
+      - file-management-network
+
   identity-api:
     build:
       context: .
