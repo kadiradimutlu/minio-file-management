@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Xunit;
 using FileManagement.Contracts.Events;
 using FileManagement.Contracts.Files;
 
