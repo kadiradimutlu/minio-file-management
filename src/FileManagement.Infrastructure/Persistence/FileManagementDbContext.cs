@@ -1,4 +1,5 @@
 using FileManagement.Domain.Entities;
+using FileManagement.Infrastructure.Persistence.Outbox;
 using Microsoft.EntityFrameworkCore;
 
 namespace FileManagement.Infrastructure.Persistence;
@@ -13,6 +14,9 @@ public sealed class FileManagementDbContext : DbContext
 
     public DbSet<StoredFile> StoredFiles =>
         Set<StoredFile>();
+
+    public DbSet<OutboxMessage> OutboxMessages =>
+        Set<OutboxMessage>();
 
     protected override void OnModelCreating(
         ModelBuilder modelBuilder)
