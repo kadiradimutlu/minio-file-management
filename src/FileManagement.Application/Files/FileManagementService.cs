@@ -1,6 +1,8 @@
+using FileManagement.Application.Abstractions.Execution;
 using FileManagement.Application.Abstractions.Persistence;
 using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Application.Files.Models;
+using FileManagement.Contracts.Files;
 using FileManagement.Domain.Entities;
 
 namespace FileManagement.Application.Files;
@@ -9,13 +11,22 @@ public sealed class FileManagementService : IFileManagementService
 {
     private readonly IStoredFileRepository _repository;
     private readonly IFileStorageService _storageService;
+    private readonly IFileOperationOutbox _outbox;
+    private readonly IFileOperationContext _operationContext;
+    private readonly TimeProvider _timeProvider;
 
     public FileManagementService(
         IStoredFileRepository repository,
-        IFileStorageService storageService)
+        IFileStorageService storageService,
+        IFileOperationOutbox outbox,
+        IFileOperationContext operationContext,
+        TimeProvider timeProvider)
     {
         _repository = repository;
         _storageService = storageService;
+        _outbox = outbox;
+        _operationContext = operationContext;
+        _timeProvider = timeProvider;
     }
 
     public Task<StoredFileDto> UploadAsync(
@@ -100,6 +111,23 @@ public sealed class FileManagementService : IFileManagementService
         {
             await _repository.AddAsync(
                 storedFile,
+                cancellationToken);
+
+            var actorUserId =
+                _operationContext.ActorUserId;
+
+            var correlationId =
+                _operationContext.CorrelationId;
+
+            var occurredAtUtc =
+                _timeProvider.GetUtcNow();
+
+            await _outbox.EnqueueAsync(
+                storedFile,
+                FileOperationKinds.Uploaded,
+                actorUserId,
+                correlationId,
+                occurredAtUtc,
                 cancellationToken);
 
             await _repository.SaveChangesAsync(
