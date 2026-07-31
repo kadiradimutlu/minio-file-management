@@ -194,10 +194,35 @@ public sealed class FileManagementService : IFileManagementService
             : Map(storedFile);
     }
 
-    public async Task<StoredFileDto?> DownloadAsync(
+    public Task<StoredFileDto?> DownloadAsync(
         Guid id,
         Stream destination,
         CancellationToken cancellationToken = default)
+    {
+        return StreamAsync(
+            id,
+            destination,
+            recordDownloadOperation: true,
+            cancellationToken: cancellationToken);
+    }
+
+    public Task<StoredFileDto?> PreviewAsync(
+        Guid id,
+        Stream destination,
+        CancellationToken cancellationToken = default)
+    {
+        return StreamAsync(
+            id,
+            destination,
+            recordDownloadOperation: false,
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task<StoredFileDto?> StreamAsync(
+        Guid id,
+        Stream destination,
+        bool recordDownloadOperation,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
 
@@ -221,6 +246,29 @@ public sealed class FileManagementService : IFileManagementService
             storedFile.ObjectName,
             destination,
             cancellationToken);
+
+        if (recordDownloadOperation)
+        {
+            var actorUserId =
+                _operationContext.ActorUserId;
+
+            var correlationId =
+                _operationContext.CorrelationId;
+
+            var occurredAtUtc =
+                _timeProvider.GetUtcNow();
+
+            await _outbox.EnqueueAsync(
+                storedFile,
+                FileOperationKinds.Downloaded,
+                actorUserId,
+                correlationId,
+                occurredAtUtc,
+                cancellationToken);
+
+            await _repository.SaveChangesAsync(
+                cancellationToken);
+        }
 
         return Map(storedFile);
     }

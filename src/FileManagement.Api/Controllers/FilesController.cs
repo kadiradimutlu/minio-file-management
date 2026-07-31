@@ -283,16 +283,21 @@ public sealed class FilesController : ControllerBase
                 destination,
                 cancellationToken) =>
             {
-                var downloaded =
-                    await _fileService.DownloadAsync(
-                        id,
-                        destination,
-                        cancellationToken);
+                var streamedFile =
+                    inline
+                        ? await _fileService.PreviewAsync(
+                            id,
+                            destination,
+                            cancellationToken)
+                        : await _fileService.DownloadAsync(
+                            id,
+                            destination,
+                            cancellationToken);
 
-                if (downloaded is null)
+                if (streamedFile is null)
                 {
                     throw new InvalidOperationException(
-                        "The file metadata disappeared during download.");
+                        "The file metadata disappeared during streaming.");
                 }
             });
     }
