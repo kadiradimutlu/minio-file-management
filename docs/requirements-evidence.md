@@ -1,6 +1,6 @@
 # Gereksinim–Kanıt Matrisi
 
-Bu belge; dosya yönetimi, Identity, JWT, YARP API Gateway, frontend authentication ve gözlemlenebilirlik gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
+Bu belge; dosya yönetimi, Identity, JWT, YARP API Gateway, frontend authentication, transactional outbox, Kafka event pipeline ve gözlemlenebilirlik gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
 
 ## Backend ve Depolama
 
@@ -61,7 +61,7 @@ Bu belge; dosya yönetimi, Identity, JWT, YARP API Gateway, frontend authenticat
 | Eksik correlation ID üretilmeli | `Guid.NewGuid().ToString("N")` | Middleware kod doğrulaması |
 | Correlation ID downstream'e taşınmalı | `context.Request.Headers[HeaderName]` | Gateway → File API zinciri |
 | Gateway logları merkezi olmalı | Serilog Console ve Seq sink | Gateway startup ve proxy logları |
-| Servis logları ayrıştırılabilmeli | `Application` enrichment | Gateway, Identity ve File API log kimlikleri |
+| Servis logları ayrıştırılabilmeli | `Application` enrichment | Gateway, Identity, File API, Outbox Worker ve Operations Worker log kimlikleri |
 | Health endpoint'i bulunmalı | `/health` | Gateway health `200` |
 
 ## Frontend ve Routing
@@ -75,21 +75,46 @@ Bu belge; dosya yönetimi, Identity, JWT, YARP API Gateway, frontend authenticat
 | Vite geliştirme proxy'si Gateway'i kullanmalı | `vite.config.ts` | Hedef port `5070` |
 | JWT download ve preview | Axios Blob akışı | Download SHA-256 testi |
 
+## Transactional Outbox ve Kafka
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Versiyonlu event contract'ı | `IntegrationEventEnvelope<T>` ve `FileOperationOccurredV1` | 4 contract testi |
+| Upload event'i üretilmeli | `FileManagementService.UploadAsync` ve `FileOperationOutbox` | Application ve outbox birim testleri |
+| Download event'i üretilmeli | `FileManagementService.DownloadAsync` | Application birim testleri ve runtime Kafka tüketimi |
+| Delete event'i üretilmeli | `FileManagementService.DeleteAsync` | Application birim testleri ve runtime Kafka tüketimi |
+| Preview download sayılmamalı | `PreviewAsync` içinde `recordDownloadOperation: false` | Application birim testi |
+| Presigned URL download sayılmamalı | `CreatePresignedGetUrlAsync` outbox yazmaz | Application birim testi |
+| Metadata ve outbox atomik olmalı | Aynı `FileManagementDbContext` ve `SaveChangesAsync` transaction sınırı | Persistence ve application testleri |
+| Pending outbox mesajları Kafka'ya yayımlanmalı | `FileManagement.Outbox.Worker` | Publisher/cycle testleri ve runtime pending `0` |
+| Kafka topic açıkça hazırlanmalı | `kafka-init` ve `file-operations.v1` | Compose runtime topic describe |
+| Consumer auto commit kullanmamalı | `EnableAutoCommit = false` ve manuel `Commit` | Consumer kod doğrulaması |
+| Eventler Operations Worker tarafından tüketilmeli | `KafkaFileOperationConsumer` ve `LoggingFileOperationEventHandler` | Runtime consumer logları ve lag `0` |
+| Event ve request izlenebilir olmalı | Event ID, file ID, actor user ID ve correlation ID | Contract testleri ve yapılandırılmış loglar |
+
 ## Altyapı ve Kalite
 
 | Kontrol | Sonuç |
 |---|---|
 | Solution Release build | Başarılı |
-| Toplam birim testi | 15 / 15 başarılı |
+| Toplam birim testi | 47 / 47 başarılı |
+| Contracts testleri | 4 / 4 başarılı |
+| Operations testleri | 3 / 3 başarılı |
+| Outbox testleri | 10 / 10 başarılı |
+| Identity testleri | 1 / 1 başarılı |
+| Domain, application ve infrastructure testleri | 29 / 29 başarılı |
 | NuGet vulnerability audit | Güvenlik açığı bulunmadı |
 | Frontend lint | 0 hata, 0 uyarı |
 | Frontend production build | Başarılı |
 | Gateway image build | Başarılı |
+| Operations Worker image build | Başarılı |
 | Web image build | Başarılı |
-| Docker Compose servis sayısı | 8 |
+| Docker Compose servis sayısı | 13 |
 | Web, Gateway, File API, Identity API ve Seq health | `200` |
 | Gateway container health | `healthy` |
 | Download hash doğrulaması | SHA-256 eşleşti |
+| Pending outbox mesajı | `0` |
+| Kafka consumer group lag | `0` |
 | Working tree kontrolü | Uygulama commit'lerinden sonra temiz |
 
 Vite, ana JavaScript chunk'ı için 500 kB sınır uyarısı vermektedir. Build başarılıdır; code splitting daha sonraki performans iyileştirmesi olarak izlenecektir.
@@ -101,3 +126,19 @@ Vite, ana JavaScript chunk'ı için 500 kB sınır uyarısı vermektedir. Build 
 | `e43be37` | YARP Gateway proje temeli, route/cluster yapılandırması ve health endpoint'i |
 | `0d514ce` | Gateway tarafından üretilen correlation ID'nin downstream request'e aktarılması |
 | `ccf7828` | Docker, Compose, Nginx, Vite ve CI Gateway entegrasyonu |
+
+## Kafka Operations Commit Kanıtları
+
+| Commit | Açıklama |
+|---|---|
+| `802c83c` | Kafka broker ve topic initialization |
+| `d1ed593` | Versiyonlu file operation contract'ları |
+| `b020a57` | Contract testleri için xUnit namespace düzeltmesi |
+| `9e6e43e` | Operations Kafka consumer temeli |
+| `91306b7` | Operations Worker container entegrasyonu |
+| `78aac1c` | Transactional outbox persistence temeli |
+| `3312daf` | File operation outbox writer |
+| `b86acea` | Upload event enqueue akışı |
+| `940537f` | Outbox eventlerini Kafka'ya yayımlama |
+| `0eea9c5` | Download event üretimi |
+| `ce1e2ae` | Delete event üretimi |
