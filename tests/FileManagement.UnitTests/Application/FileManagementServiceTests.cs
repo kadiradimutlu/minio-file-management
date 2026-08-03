@@ -536,16 +536,237 @@ public sealed class FileManagementServiceTests
             repository.SaveChangesCallCount);
     }
     [Fact]
-    public async Task DeleteAsync_WhenFileDoesNotExist_ReturnsFalse()
+    public async Task DeleteAsync_WithExistingFile_EnqueuesDeletedOperation()
     {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
         var service = CreateService(
-            new FakeStoredFileRepository(),
-            new FakeFileStorageService());
+            repository,
+            storage,
+            outbox);
 
-        var deleted = await service.DeleteAsync(
-            Guid.NewGuid());
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                "delete-content"u8.ToArray());
 
-        Assert.False(deleted);
+        var deleted =
+            await service.DeleteAsync(
+                storedFile.Id);
+
+        Assert.True(
+            deleted);
+
+        Assert.Empty(
+            repository.StoredFiles);
+
+        Assert.False(
+            storage.Objects.ContainsKey(
+                storedFile.ObjectName));
+
+        Assert.Equal(
+            1,
+            storage.DeleteCallCount);
+
+        Assert.Equal(
+            storedFile.ObjectName,
+            Assert.Single(
+                storage.DeletedObjectNames));
+
+        var operation =
+            Assert.Single(
+                outbox.Operations);
+
+        Assert.Equal(
+            storedFile.Id,
+            operation.StoredFile.Id);
+
+        Assert.Equal(
+            FileOperationKinds.Deleted,
+            operation.Operation);
+
+        Assert.Equal(
+            "user-42",
+            operation.ActorUserId);
+
+        Assert.Equal(
+            "correlation-123",
+            operation.CorrelationId);
+
+        Assert.Equal(
+            FakeTimeProvider.FixedUtcNow,
+            operation.OccurredAtUtc);
+
+        Assert.Equal(
+            1,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenFileDoesNotExist_HasNoSideEffects()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var deleted =
+            await service.DeleteAsync(
+                Guid.NewGuid());
+
+        Assert.False(
+            deleted);
+
+        Assert.Equal(
+            0,
+            storage.DeleteCallCount);
+
+        Assert.Empty(
+            storage.DeletedObjectNames);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenStorageFails_DoesNotEnqueueOrRemove()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService
+            {
+                ThrowOnDelete = true
+            };
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                "storage-delete-failure"u8.ToArray());
+
+        await Assert.ThrowsAsync<
+            InvalidOperationException>(
+                () =>
+                    service.DeleteAsync(
+                        storedFile.Id));
+
+        var remainingFile =
+            Assert.Single(
+                repository.StoredFiles);
+
+        Assert.Equal(
+            storedFile.Id,
+            remainingFile.Id);
+
+        Assert.True(
+            storage.Objects.ContainsKey(
+                storedFile.ObjectName));
+
+        Assert.Equal(
+            1,
+            storage.DeleteCallCount);
+
+        Assert.Empty(
+            storage.DeletedObjectNames);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenOutboxFails_DoesNotRemoveMetadata()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox
+            {
+                ThrowOnEnqueue = true
+            };
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                "outbox-delete-failure"u8.ToArray());
+
+        await Assert.ThrowsAsync<
+            InvalidOperationException>(
+                () =>
+                    service.DeleteAsync(
+                        storedFile.Id));
+
+        var remainingFile =
+            Assert.Single(
+                repository.StoredFiles);
+
+        Assert.Equal(
+            storedFile.Id,
+            remainingFile.Id);
+
+        Assert.False(
+            storage.Objects.ContainsKey(
+                storedFile.ObjectName));
+
+        Assert.Equal(
+            1,
+            storage.DeleteCallCount);
+
+        Assert.Equal(
+            storedFile.ObjectName,
+            Assert.Single(
+                storage.DeletedObjectNames));
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
     }
 
     private static StoredFile AddStoredFile(
@@ -744,7 +965,15 @@ public sealed class FileManagementServiceTests
 
         public bool ThrowOnDownload { get; init; }
 
+        public bool ThrowOnDelete { get; init; }
+
         public int DownloadCallCount
+        {
+            get;
+            private set;
+        }
+
+        public int DeleteCallCount
         {
             get;
             private set;
@@ -803,8 +1032,19 @@ public sealed class FileManagementServiceTests
             string objectName,
             CancellationToken cancellationToken = default)
         {
-            DeletedObjectNames.Add(objectName);
-            Objects.Remove(objectName);
+            DeleteCallCount++;
+
+            if (ThrowOnDelete)
+            {
+                throw new InvalidOperationException(
+                    "Simulated storage delete failure.");
+            }
+
+            DeletedObjectNames.Add(
+                objectName);
+
+            Objects.Remove(
+                objectName);
 
             return Task.CompletedTask;
         }

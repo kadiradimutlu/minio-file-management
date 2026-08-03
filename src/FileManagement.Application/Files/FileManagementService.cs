@@ -315,6 +315,23 @@ public sealed class FileManagementService : IFileManagementService
             storedFile.ObjectName,
             cancellationToken);
 
+        var actorUserId =
+            _operationContext.ActorUserId;
+
+        var correlationId =
+            _operationContext.CorrelationId;
+
+        var occurredAtUtc =
+            _timeProvider.GetUtcNow();
+
+        await _outbox.EnqueueAsync(
+            storedFile,
+            FileOperationKinds.Deleted,
+            actorUserId,
+            correlationId,
+            occurredAtUtc,
+            cancellationToken);
+
         _repository.Remove(storedFile);
 
         await _repository.SaveChangesAsync(
