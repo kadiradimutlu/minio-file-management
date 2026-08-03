@@ -1,6 +1,6 @@
 # Gereksinim–Kanıt Matrisi
 
-Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway, frontend authentication, transactional outbox, Kafka event pipeline ve gözlemlenebilirlik gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
+Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway, frontend authentication, transactional outbox, Kafka event pipeline, Hangfire reporting ve gözlemlenebilirlik gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
 
 ## Backend ve Depolama
 
@@ -109,32 +109,54 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Eventler Operations Worker tarafından tüketilmeli | `KafkaFileOperationConsumer` ve `LoggingFileOperationEventHandler` | Runtime consumer logları ve lag `0` |
 | Event ve request izlenebilir olmalı | Event ID, file ID, actor user ID ve correlation ID | Contract testleri ve yapılandırılmış loglar |
 
+## Hangfire Reporting
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Ayrı reporting worker olmalı | `FileManagement.Reporting.Worker` | Solution Release build ve ayrı container image |
+| Job storage kalıcı olmalı | `Hangfire.PostgreSql`, ayrı `hangfire` şeması | Runtime şema ve recurring job kaydı |
+| Günlük upload/download/delete özeti üretilmeli | `DailyFileOperationsReportJob` ve `DailyFileOperationsReportCalculator` | Manuel job ile gerçek rapor satırı |
+| Upload content type ve byte toplamları raporlanmalı | `UploadedContentTypes`, `UploadedBytes`, `DownloadedBytes` | Calculator birim testleri |
+| Outbox tanılama bilgileri raporlanmalı | Pending, failed ve invalid event alanları | Unit test ve runtime rapor sonucu |
+| Rapor üretimi idempotent olmalı | `report_date` doğal primary key ve `Refresh` akışı | Domain testi ve aynı tarih için upsert davranışı |
+| Geçici hatalar retry edilmeli | `AutomaticRetry`, 60/300/900 saniye gecikmeler | Reflection tabanlı job configuration testleri |
+| Aynı job eşzamanlı çalışmamalı | `DisableConcurrentExecution(600)` | Job configuration testleri |
+| Dashboard korunmalı | Ayrı Basic Authentication doğrulaması | Kimliksiz `401`, doğru kimlikle `200` |
+| Dashboard salt okunur olmalı | `DashboardOptions.IsReadOnlyFunc` | Configuration ve runtime dashboard kontrolü |
+| Reporting API korunmalı | `ReportingAdministrator` authorization policy | Kimliksiz `401`, yetkili enqueue `202` |
+| Servis host erişimi sınırlandırılmalı | Compose port binding `127.0.0.1` | Render edilmiş Compose configuration |
+
 ## Altyapı ve Kalite
 
 | Kontrol | Sonuç |
 |---|---|
 | Solution Release build | Başarılı |
-| Toplam birim testi | 66 / 66 başarılı |
+| Toplam birim testi | 83 / 83 başarılı |
 | Contracts testleri | 4 / 4 başarılı |
 | Operations testleri | 3 / 3 başarılı |
 | Outbox testleri | 10 / 10 başarılı |
 | Identity testleri | 1 / 1 başarılı |
 | Domain, application ve infrastructure testleri | 48 / 48 başarılı |
+| Reporting testleri | 17 / 17 başarılı |
 | NuGet vulnerability audit | Güvenlik açığı bulunmadı |
 | Frontend lint | 0 hata, 0 uyarı |
 | Frontend production build | Başarılı |
 | Gateway image build | Başarılı |
 | Operations Worker image build | Başarılı |
+| Reporting Worker image build | Başarılı |
 | Web image build | Başarılı |
-| Docker Compose servis sayısı | 14 |
+| Docker Compose servis sayısı | 15 |
 | Web, Gateway, File API, Identity API ve Seq health | `200` |
 | Gateway container health | `healthy` |
 | Redis container health | `healthy` |
+| Reporting container health | `healthy` |
+| Hangfire Dashboard authentication | Kimliksiz `401`, yetkili `200` |
+| Reporting manual enqueue | `202`, rapor satırı üretildi |
 | Redis kesintisinde PostgreSQL fallback | Başarılı |
 | Download hash doğrulaması | SHA-256 eşleşti |
 | Pending outbox mesajı | `0` |
 | Kafka consumer group lag | `0` |
-| Working tree kontrolü | Uygulama commit'lerinden sonra temiz |
+| Working tree kontrolü | Değişiklikler yalnız Hangfire reporting milestone kapsamındadır; commit oluşturulmadı |
 
 Vite, ana JavaScript chunk'ı için 500 kB sınır uyarısı vermektedir. Build başarılıdır; code splitting daha sonraki performans iyileştirmesi olarak izlenecektir.
 

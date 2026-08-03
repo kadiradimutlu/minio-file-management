@@ -1,6 +1,6 @@
 # MinIO File Management
 
-MinIO Object Storage, PostgreSQL, Redis, ASP.NET Core Identity, JWT, YARP API Gateway, Kafka, transactional outbox, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
+MinIO Object Storage, PostgreSQL, Redis, ASP.NET Core Identity, JWT, YARP API Gateway, Kafka, transactional outbox, Hangfire, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
 
 Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata bilgileri PostgreSQL içindeki `file_management` veritabanında, kullanıcı ve rol bilgileri ise ayrı `identity_management` veritabanında saklanır.
 
@@ -58,6 +58,16 @@ Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata 
 - Otomatik commit kapalı Operations Kafka consumer
 - Event başarıyla işlendiğinde manuel Kafka offset commit
 - Event ID, file ID, kullanıcı ve correlation ID içeren yapılandırılmış worker logları
+
+### Zamanlanmış raporlama
+
+- PostgreSQL kalıcı storage kullanan ayrı Hangfire Reporting Worker
+- Her gün `01:00 UTC` zamanlanan upload, download ve delete özeti
+- Upload content type dağılımı, byte toplamları ve outbox tanılama sayıları
+- Tarih anahtarlı idempotent rapor tablosu ve manuel yeniden üretim endpoint'i
+- Üç kademeli otomatik retry ve eşzamanlı çalışma koruması
+- Yalnız loopback host portunda yayınlanan, Basic Authentication korumalı salt okunur Hangfire Dashboard
+- Basic Authentication korumalı günlük rapor listeleme ve job enqueue endpoint'leri
 
 ### Gözlemlenebilirlik
 
@@ -119,6 +129,7 @@ Identity API -------+---- Serilog ----> Seq
 File API -----------+
 Outbox Worker ------+
 Operations Worker --/
+Reporting Worker --------------------------/
 ~~~
 
 Nginx yalnızca statik React dosyalarını sunar ve bütün `/api/*` isteklerini YARP Gateway'e iletir. Servis seçimi Gateway içindeki route ve cluster yapılandırmasıyla yapılır.
@@ -163,6 +174,7 @@ src/
 ├── FileManagement.Identity.Infrastructure
 ├── FileManagement.Operations.Worker
 ├── FileManagement.Outbox.Worker
+├── FileManagement.Reporting.Worker
 └── FileManagement.Web
 
 tests/
@@ -170,9 +182,11 @@ tests/
 ├── FileManagement.Identity.UnitTests
 ├── FileManagement.Operations.UnitTests
 ├── FileManagement.Outbox.UnitTests
+├── FileManagement.Reporting.UnitTests
 └── FileManagement.UnitTests
 
 docs/
+├── hangfire-reporting-verification-report.md
 ├── kafka-operations-verification-report.md
 ├── redis-cache-verification-report.md
 ├── requirements-evidence.md
@@ -191,11 +205,13 @@ Katmanların sorumlulukları:
 - `FileManagement.Identity.Api`: Register, login, current user ve admin endpoint'leri
 - `FileManagement.Outbox.Worker`: Pending outbox mesajlarını Kafka'ya yayımlayan background worker
 - `FileManagement.Operations.Worker`: Dosya operasyon eventlerini Kafka'dan tüketen background worker
+- `FileManagement.Reporting.Worker`: Hangfire ile günlük dosya operasyon raporlarını üreten, güvenli dashboard ve rapor API'si sunan worker
 - `FileManagement.Web`: React kullanıcı arayüzü, oturum yönetimi ve API istemcileri
 - `FileManagement.Contracts.UnitTests`: Event contract ve JSON uyumluluk testleri
 - `FileManagement.Identity.UnitTests`: JWT üretim ve doğrulama testleri
 - `FileManagement.Operations.UnitTests`: Kafka event deserialization testleri
 - `FileManagement.Outbox.UnitTests`: Outbox publish cycle ve publisher testleri
+- `FileManagement.Reporting.UnitTests`: Rapor parser, hesaplama, idempotency, retry ve dashboard kimlik doğrulama testleri
 - `FileManagement.UnitTests`: Domain, application, persistence, cache ve outbox entity testleri
 
 ## Authentication Akışı
@@ -240,6 +256,7 @@ Kurallar:
 - JWT Bearer Authentication
 - Entity Framework Core
 - PostgreSQL
+- Hangfire ve Hangfire.PostgreSql
 - Microsoft distributed cache ve StackExchange.Redis
 - MinIO .NET SDK
 - Serilog
@@ -289,8 +306,12 @@ Copy-Item ".env.example" ".env"
 - `SEQ_ADMIN_PASSWORD`
 - `JWT_SIGNING_KEY`
 - `IDENTITY_ADMIN_PASSWORD`
+- `REPORTING_DASHBOARD_USERNAME`
+- `REPORTING_DASHBOARD_PASSWORD`
 
 `JWT_SIGNING_KEY` en az 32 karakterden oluşan rastgele bir değer olmalıdır.
+
+`REPORTING_DASHBOARD_PASSWORD` en az 16 karakterden oluşan güçlü ve ayrı bir parola olmalıdır.
 
 `.env` dosyası Git tarafından takip edilmez.
 
@@ -327,6 +348,7 @@ Başlangıç sırasında:
 - Kafka broker healthy olduktan sonra `file-operations.v1` topic'i `kafka-init` işi tarafından oluşturulur.
 - Outbox Worker pending mesajları Kafka'ya yayımlamaya başlar.
 - Operations Worker dosya operasyon eventlerini tüketmeye başlar.
+- Reporting Worker uygulama migration'larını doğrular, ayrı `hangfire` şemasını hazırlar ve günlük rapor işini kaydeder.
 
 ## Docker Compose Servisleri
 
@@ -342,6 +364,7 @@ Başlangıç sırasında:
 | `seq` | Merkezi yapılandırılmış loglar |
 | `operations-worker` | Kafka dosya operasyon eventlerini tüketen worker |
 | `outbox-worker` | Transactional outbox mesajlarını Kafka'ya yayımlayan worker |
+| `reporting-worker` | Günlük dosya operasyon raporlarını üreten Hangfire worker ve yönetim endpoint'leri |
 | `identity-api` | Kullanıcı, rol ve JWT işlemleri |
 | `api` | Dosya yönetimi ve JWT doğrulaması |
 | `gateway` | YARP route/cluster yönetimi ve merkezi API giriş noktası |
@@ -363,6 +386,9 @@ Başlangıç sırasında:
 | Identity API health | `http://127.0.0.1:5090/health` |
 | Identity API Swagger | `http://127.0.0.1:5090/swagger` |
 | Identity API OpenAPI | `http://127.0.0.1:5090/openapi/v1.json` |
+| Reporting health | `http://127.0.0.1:5100/health` |
+| Hangfire Dashboard | `http://127.0.0.1:5100/hangfire` |
+| Reporting API | `http://127.0.0.1:5100/api/reports/daily` |
 | Seq | `http://127.0.0.1:5341` |
 | MinIO API | `http://127.0.0.1:9000` |
 | MinIO Console | `http://127.0.0.1:9001` |
@@ -407,6 +433,19 @@ Bütün `/api/files` endpoint'leri geçerli Bearer token gerektirir.
 | `GET` | `/api/files/{id}/presigned-url` | Süreli MinIO URL'si oluşturma |
 | `DELETE` | `/api/files/{id}` | Dosyayı ve metadata kaydını silme |
 | `GET` | `/health` | Anonim File API sağlık kontrolü |
+
+## Reporting Endpoint'leri
+
+Reporting host portu yalnızca `127.0.0.1` üzerinde yayınlanır. Dashboard ve rapor endpoint'leri `.env` içindeki ayrı reporting kullanıcı adı/parolasıyla HTTP Basic Authentication gerektirir. Üretimde HTTPS ve secret manager kullanımı zorunlu kabul edilmelidir.
+
+| Metot | Endpoint | Açıklama |
+|---|---|---|
+| `GET` | `/api/reports/daily?limit=30` | En yeni günlük raporları listeler |
+| `POST` | `/api/reports/daily/{yyyy-MM-dd}/enqueue` | İzin verilen tarih aralığı için idempotent rapor job'ı kuyruğa alır |
+| `GET` | `/hangfire` | Salt okunur Hangfire Dashboard |
+| `GET` | `/health` | Anonim Reporting Worker sağlık kontrolü |
+
+Varsayılan günlük job önceki UTC gününü `01:00 UTC` saatinde üretir. Aynı tarih yeniden çalıştırıldığında yeni satır eklemek yerine doğal tarih anahtarlı mevcut rapor güncellenir.
 
 ## API Kullanım Örnekleri
 
@@ -555,7 +594,7 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 
 - NuGet restore ve güvenlik denetimi
 - Bütün solution için Release build
-- File, Identity, Contracts, Outbox ve Operations birim testleri
+- File, Identity, Contracts, Outbox, Operations ve Reporting birim testleri
 - Zafiyetli NuGet paket raporu
 
 ### Frontend
@@ -569,7 +608,7 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 
 - Docker Compose yapılandırma kontrolü
 - Servis listesinin doğrulanması
-- File API, Identity API, Gateway, Operations Worker ve Web image build işlemleri
+- File API, Identity API, Gateway, Operations Worker, Reporting Worker ve Web image build işlemleri
 - Oluşturulan image'ların doğrulanması
 
 ## Servisleri Durdurma
@@ -615,6 +654,9 @@ Mevcut uygulamada JWT authentication, temel role dayalı authorization, parola h
 - Seq alarm ve retention politikaları
 - MinIO lisans ve destek koşulları
 - Redis TLS, ağ izolasyonu, yönetilen servis ve lisans/destek koşulları
+- Reporting Basic Authentication bilgilerinin secret manager içinde tutulması ve yalnız HTTPS üzerinden kullanılması
+- Hangfire Dashboard host erişiminin ağ politikasıyla sınırlandırılması
+- Hangfire ve Hangfire.PostgreSql lisans/destek koşullarının üretim kullanımı öncesi değerlendirilmesi
 
 MinIO Community binary'si sabitlenmiş kaynak kod tag'inden oluşturulur:
 
@@ -625,6 +667,7 @@ RELEASE.2025-10-15T17-29-55Z
 ## Kanıt ve Doğrulama
 
 - [Gereksinim–kanıt matrisi](docs/requirements-evidence.md)
+- [Hangfire reporting doğrulama raporu](docs/hangfire-reporting-verification-report.md)
 - [Redis metadata cache doğrulama raporu](docs/redis-cache-verification-report.md)
 - [Kafka operations doğrulama raporu](docs/kafka-operations-verification-report.md)
 - [YARP Gateway doğrulama raporu](docs/verification-report.md)
