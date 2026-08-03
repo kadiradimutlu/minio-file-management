@@ -18,6 +18,10 @@ public sealed class FileManagementDbContext : DbContext
     public DbSet<OutboxMessage> OutboxMessages =>
         Set<OutboxMessage>();
 
+    public DbSet<DailyFileOperationReport>
+        DailyFileOperationReports =>
+            Set<DailyFileOperationReport>();
+
     protected override void OnModelCreating(
         ModelBuilder modelBuilder)
     {
