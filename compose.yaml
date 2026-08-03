@@ -277,6 +277,43 @@ services:
     networks:
       - file-management-network
 
+  reporting-worker:
+    build:
+      context: .
+      dockerfile: docker/reporting-worker/Dockerfile
+    image: minio-file-management/reporting-worker:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__PostgreSql: "Host=postgres;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Reporting__DailyReportCron: "0 1 * * *"
+      Reporting__WorkerCount: "2"
+      Reporting__MaxManualLookbackDays: "3650"
+      Reporting__MaxResultCount: "100"
+      Dashboard__Username: "${REPORTING_DASHBOARD_USERNAME:?REPORTING_DASHBOARD_USERNAME is required}"
+      Dashboard__Password: "${REPORTING_DASHBOARD_PASSWORD:?REPORTING_DASHBOARD_PASSWORD is required}"
+      Seq__ServerUrl: "http://seq:80"
+    ports:
+      - "127.0.0.1:${REPORTING_PORT:-5100}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    mem_limit: 256m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --silent http://127.0.0.1:8080/health > /dev/null || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - file-management-network
+
   identity-api:
     build:
       context: .

@@ -135,6 +135,7 @@ jobs:
           identity-api
           gateway
           operations-worker
+          reporting-worker
           web
 
       - name: Inspect application images
@@ -143,4 +144,5 @@ jobs:
           docker image inspect minio-file-management/identity-api:local
           docker image inspect minio-file-management/gateway:local
           docker image inspect minio-file-management/operations-worker:local
+          docker image inspect minio-file-management/reporting-worker:local
           docker image inspect minio-file-management/web:local
