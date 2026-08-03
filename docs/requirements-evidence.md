@@ -1,6 +1,6 @@
 # Gereksinim–Kanıt Matrisi
 
-Bu belge; dosya yönetimi, Identity, JWT, YARP API Gateway, frontend authentication, transactional outbox, Kafka event pipeline ve gözlemlenebilirlik gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
+Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway, frontend authentication, transactional outbox, Kafka event pipeline ve gözlemlenebilirlik gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
 
 ## Backend ve Depolama
 
@@ -24,6 +24,23 @@ Bu belge; dosya yönetimi, Identity, JWT, YARP API Gateway, frontend authenticat
 | Alanlar birlikte verilmelidir | Domain ve request doğrulamaları | Eksik association birim testi |
 | İlgili kayda göre filtreleme | Repository ve File API query parametreleri | Gateway filtre sonucu `1` |
 | Metadata uzunluk kuralları | Domain sabitleri ve EF configuration | Domain birim testleri |
+
+## Redis Metadata Cache
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Cache API sözleşmesini değiştirmemeli | `CachedFileManagementService` decorator'ı | Mevcut File API endpoint'leri ve DTO'ları değişmedi |
+| Liste metadata'sı cache'lenmeli | `GetListAsync` / `SetListAsync` ve filtre hash'i | Aynı filtre için beklenen Redis anahtarı runtime'da doğrulandı |
+| Detail metadata'sı cache'lenmeli | `GetFileAsync` / `SetFileAsync` | Upload sonrası detail anahtarı runtime'da bulundu |
+| Dosya içeriği cache'lenmemeli | Download, preview ve presigned URL çağrıları doğrudan ana servise delegate edilir | Decorator birim testleri |
+| Upload cache'i güncellemelidir | Detail warm-up ve liste nesli invalidation | Runtime upload ve düz GUID generation doğrulaması |
+| Delete cache'i temizlemelidir | Detail eviction ve liste nesli invalidation | Runtime delete sonrası anahtar ve generation doğrulaması |
+| Eski liste anahtarları erişilemez olmalıdır | Generation tabanlı liste anahtarı | Invalidation birim testi |
+| Redis kesintisi ana işlemi durdurmamalıdır | Recoverable cache hatalarında fail-open davranışı | Redis durdurularak list/detail/upload/delete doğrulandı |
+| Cache isteğe bağlı olmalıdır | `NullFileMetadataCache` ve `FileCache:Enabled` | Cache kapalı yapılandırma kod doğrulaması |
+| TTL ve timeout değerleri sınırlandırılmalıdır | `FileMetadataCacheOptions` ve `RedisCacheConnectionOptions` validation | Başlangıç validation ve birim testleri |
+| Redis parola korumalı olmalıdır | Compose `requirepass` ve authenticated healthcheck | Authenticated `PONG`, unauthenticated `NOAUTH` |
+| Redis verisi geçici olmalıdır | `--save ""` ve `--appendonly no` | Compose configuration doğrulaması |
 
 ## Identity ve JWT
 
@@ -97,21 +114,23 @@ Bu belge; dosya yönetimi, Identity, JWT, YARP API Gateway, frontend authenticat
 | Kontrol | Sonuç |
 |---|---|
 | Solution Release build | Başarılı |
-| Toplam birim testi | 47 / 47 başarılı |
+| Toplam birim testi | 66 / 66 başarılı |
 | Contracts testleri | 4 / 4 başarılı |
 | Operations testleri | 3 / 3 başarılı |
 | Outbox testleri | 10 / 10 başarılı |
 | Identity testleri | 1 / 1 başarılı |
-| Domain, application ve infrastructure testleri | 29 / 29 başarılı |
+| Domain, application ve infrastructure testleri | 48 / 48 başarılı |
 | NuGet vulnerability audit | Güvenlik açığı bulunmadı |
 | Frontend lint | 0 hata, 0 uyarı |
 | Frontend production build | Başarılı |
 | Gateway image build | Başarılı |
 | Operations Worker image build | Başarılı |
 | Web image build | Başarılı |
-| Docker Compose servis sayısı | 13 |
+| Docker Compose servis sayısı | 14 |
 | Web, Gateway, File API, Identity API ve Seq health | `200` |
 | Gateway container health | `healthy` |
+| Redis container health | `healthy` |
+| Redis kesintisinde PostgreSQL fallback | Başarılı |
 | Download hash doğrulaması | SHA-256 eşleşti |
 | Pending outbox mesajı | `0` |
 | Kafka consumer group lag | `0` |
