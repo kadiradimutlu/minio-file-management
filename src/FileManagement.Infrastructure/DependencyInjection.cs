@@ -1,6 +1,7 @@
 using FileManagement.Application.Abstractions.Persistence;
 using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Infrastructure.Persistence;
+using FileManagement.Infrastructure.Persistence.Outbox;
 using FileManagement.Infrastructure.Storage.Minio;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -31,6 +32,9 @@ public static class DependencyInjection
         services.AddScoped<
             IStoredFileRepository,
             StoredFileRepository>();
+        services.AddScoped<
+            IFileOperationOutbox,
+            FileOperationOutbox>();
 
         services.AddOptions<MinioOptions>()
             .Bind(

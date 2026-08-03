@@ -3,7 +3,9 @@ using System.Text;
 using FileManagement.Api.Middleware;
 using FileManagement.Api.OpenApi;
 using FileManagement.Api.Options;
+using FileManagement.Api.Services;
 using FileManagement.Application;
+using FileManagement.Application.Abstractions.Execution;
 using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Infrastructure;
 using FileManagement.Infrastructure.Persistence;
@@ -178,6 +180,12 @@ builder.Services
         });
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddHttpContextAccessor();
+
+builder.Services.AddScoped<
+    IFileOperationContext,
+    HttpFileOperationContext>();
 
 builder.Services.AddApplication();
 

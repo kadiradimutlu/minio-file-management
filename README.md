@@ -1,6 +1,6 @@
 # MinIO File Management
 
-MinIO Object Storage, PostgreSQL, ASP.NET Core Identity, JWT, YARP API Gateway, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
+MinIO Object Storage, PostgreSQL, ASP.NET Core Identity, JWT, YARP API Gateway, Kafka, transactional outbox, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
 
 Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata bilgileri PostgreSQL içindeki `file_management` veritabanında, kullanıcı ve rol bilgileri ise ayrı `identity_management` veritabanında saklanır.
 
@@ -38,6 +38,16 @@ Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata 
 - Sekme bazlı `sessionStorage` oturumu
 - Axios Bearer interceptor'ı
 - Token süresi dolduğunda veya `401` alındığında otomatik logout
+
+### Olay işleme
+
+- Upload, download ve delete işlemleri için versiyonlu integration event contract'ları
+- Dosya metadata değişikliğiyle aynı PostgreSQL transaction'ında outbox kaydı
+- Pending outbox mesajlarını Kafka'ya yayımlayan ayrı Outbox Worker
+- Kafka topic'ini hazırlayan tek seferlik init işi
+- Otomatik commit kapalı Operations Kafka consumer
+- Event başarıyla işlendiğinde manuel Kafka offset commit
+- Event ID, file ID, kullanıcı ve correlation ID içeren yapılandırılmış worker logları
 
 ### Gözlemlenebilirlik
 
@@ -80,9 +90,24 @@ YARP Gateway :8080
                          |--> file_management
                          `--> MinIO private bucket
 
-Gateway ------\
-Identity API --+---- Serilog ----> Seq
-File API -----/
+File API
+   |
+   `--> PostgreSQL Outbox
+            |
+            v
+       Outbox Worker
+            |
+            v
+          Kafka
+            |
+            v
+     Operations Worker
+
+Gateway -----------\
+Identity API -------+---- Serilog ----> Seq
+File API -----------+
+Outbox Worker ------+
+Operations Worker --/
 ~~~
 
 Nginx yalnızca statik React dosyalarını sunar ve bütün `/api/*` isteklerini YARP Gateway'e iletir. Servis seçimi Gateway içindeki route ve cluster yapılandırmasıyla yapılır.
@@ -117,18 +142,25 @@ File API, her dosya isteğinde Identity API'ye çağrı yapmaz. Identity API tar
 src/
 ├── FileManagement.Api
 ├── FileManagement.Application
+├── FileManagement.Contracts
 ├── FileManagement.Domain
 ├── FileManagement.Infrastructure
 ├── FileManagement.Gateway
 ├── FileManagement.Identity.Api
 ├── FileManagement.Identity.Infrastructure
+├── FileManagement.Operations.Worker
+├── FileManagement.Outbox.Worker
 └── FileManagement.Web
 
 tests/
-├── FileManagement.UnitTests
-└── FileManagement.Identity.UnitTests
+├── FileManagement.Contracts.UnitTests
+├── FileManagement.Identity.UnitTests
+├── FileManagement.Operations.UnitTests
+├── FileManagement.Outbox.UnitTests
+└── FileManagement.UnitTests
 
 docs/
+├── kafka-operations-verification-report.md
 ├── requirements-evidence.md
 └── verification-report.md
 ~~~
@@ -137,14 +169,20 @@ Katmanların sorumlulukları:
 
 - `FileManagement.Domain`: Dosya entity'leri ve domain kuralları
 - `FileManagement.Application`: Dosya servisleri, DTO'lar ve soyutlamalar
+- `FileManagement.Contracts`: Versiyonlu integration event envelope ve dosya operasyon contract'ları
 - `FileManagement.Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
 - `FileManagement.Gateway`: YARP route/cluster yönetimi, API trafiği ve correlation ID başlangıç noktası
 - `FileManagement.Api`: Korumalı dosya endpoint'leri, JWT doğrulaması, OpenAPI ve Swagger
 - `FileManagement.Identity.Infrastructure`: Identity persistence, kullanıcı/rol yönetimi ve JWT üretimi
 - `FileManagement.Identity.Api`: Register, login, current user ve admin endpoint'leri
+- `FileManagement.Outbox.Worker`: Pending outbox mesajlarını Kafka'ya yayımlayan background worker
+- `FileManagement.Operations.Worker`: Dosya operasyon eventlerini Kafka'dan tüketen background worker
 - `FileManagement.Web`: React kullanıcı arayüzü, oturum yönetimi ve API istemcileri
-- `FileManagement.UnitTests`: Domain ve application servis testleri
+- `FileManagement.Contracts.UnitTests`: Event contract ve JSON uyumluluk testleri
 - `FileManagement.Identity.UnitTests`: JWT üretim ve doğrulama testleri
+- `FileManagement.Operations.UnitTests`: Kafka event deserialization testleri
+- `FileManagement.Outbox.UnitTests`: Outbox publish cycle ve publisher testleri
+- `FileManagement.UnitTests`: Domain, application, persistence ve outbox entity testleri
 
 ## Authentication Akışı
 
@@ -267,6 +305,10 @@ Başlangıç sırasında:
 - İlk admin hesabı gerektiğinde oluşturulur.
 - MinIO bucket'ı hazırlanır.
 - Identity veritabanı yoksa `identity-db-init` işi tarafından oluşturulur.
+- Kafka data volume izinleri `kafka-data-init` işi tarafından hazırlanır.
+- Kafka broker healthy olduktan sonra `file-operations.v1` topic'i `kafka-init` işi tarafından oluşturulur.
+- Outbox Worker pending mesajları Kafka'ya yayımlamaya başlar.
+- Operations Worker dosya operasyon eventlerini tüketmeye başlar.
 
 ## Docker Compose Servisleri
 
@@ -275,13 +317,18 @@ Başlangıç sırasında:
 | `postgres` | File ve Identity mantıksal veritabanları |
 | `identity-db-init` | Identity veritabanını hazırlayan tek seferlik init işi |
 | `minio` | Dosya içeriği depolama |
+| `kafka-data-init` | Kafka data volume izinlerini hazırlayan tek seferlik init işi |
+| `kafka` | KRaft modunda dosya operasyon event broker'ı |
+| `kafka-init` | `file-operations.v1` topic'ini hazırlayan tek seferlik init işi |
 | `seq` | Merkezi yapılandırılmış loglar |
+| `operations-worker` | Kafka dosya operasyon eventlerini tüketen worker |
+| `outbox-worker` | Transactional outbox mesajlarını Kafka'ya yayımlayan worker |
 | `identity-api` | Kullanıcı, rol ve JWT işlemleri |
 | `api` | Dosya yönetimi ve JWT doğrulaması |
 | `gateway` | YARP route/cluster yönetimi ve merkezi API giriş noktası |
 | `web` | React uygulaması ve Nginx statik dosya/reverse proxy katmanı |
 
-`identity-db-init` başarılı çalıştıktan sonra `Exited (0)` durumunda kalması beklenen davranıştır.
+`identity-db-init`, `kafka-data-init` ve `kafka-init` başarılı çalıştıktan sonra `Exited (0)` durumunda kalması beklenen davranıştır.
 
 ## Lokal Adresler
 
@@ -300,6 +347,7 @@ Başlangıç sırasında:
 | Seq | `http://127.0.0.1:5341` |
 | MinIO API | `http://127.0.0.1:9000` |
 | MinIO Console | `http://127.0.0.1:9001` |
+| Kafka | `127.0.0.1:9092` |
 | PostgreSQL | `127.0.0.1:5432` |
 
 Uygulama yönlendirme zinciri:
@@ -487,7 +535,7 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 
 - NuGet restore ve güvenlik denetimi
 - Bütün solution için Release build
-- File ve Identity birim testleri
+- File, Identity, Contracts, Outbox ve Operations birim testleri
 - Zafiyetli NuGet paket raporu
 
 ### Frontend
@@ -501,7 +549,7 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 
 - Docker Compose yapılandırma kontrolü
 - Servis listesinin doğrulanması
-- File API, Identity API, Gateway ve Web image build işlemleri
+- File API, Identity API, Gateway, Operations Worker ve Web image build işlemleri
 - Oluşturulan image'ların doğrulanması
 
 ## Servisleri Durdurma
@@ -514,7 +562,7 @@ docker compose `
     down
 ~~~
 
-PostgreSQL, MinIO ve Seq volume verilerini de silerek:
+PostgreSQL, MinIO, Kafka ve Seq volume verilerini de silerek:
 
 ~~~powershell
 docker compose `
@@ -523,7 +571,7 @@ docker compose `
     --volumes
 ~~~
 
-`--volumes` seçeneği lokal PostgreSQL, MinIO ve Seq verilerini kalıcı olarak siler.
+`--volumes` seçeneği lokal PostgreSQL, MinIO, Kafka ve Seq verilerini kalıcı olarak siler.
 
 ## Güvenlik ve Üretim Notları
 
@@ -554,4 +602,5 @@ RELEASE.2025-10-15T17-29-55Z
 ## Kanıt ve Doğrulama
 
 - [Gereksinim–kanıt matrisi](docs/requirements-evidence.md)
-- [Doğrulama raporu](docs/verification-report.md)
+- [Kafka operations doğrulama raporu](docs/kafka-operations-verification-report.md)
+- [YARP Gateway doğrulama raporu](docs/verification-report.md)

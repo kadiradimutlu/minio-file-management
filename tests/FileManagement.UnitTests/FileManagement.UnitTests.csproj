@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FileManagement.Application\FileManagement.Application.csproj" />
     <ProjectReference Include="..\..\src\FileManagement.Domain\FileManagement.Domain.csproj" />
+    <ProjectReference Include="..\..\src\FileManagement.Infrastructure\FileManagement.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
