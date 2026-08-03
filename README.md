@@ -1,6 +1,6 @@
 # MinIO File Management
 
-MinIO Object Storage, PostgreSQL, ASP.NET Core Identity, JWT, YARP API Gateway, Kafka, transactional outbox, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
+MinIO Object Storage, PostgreSQL, Redis, ASP.NET Core Identity, JWT, YARP API Gateway, Kafka, transactional outbox, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
 
 Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata bilgileri PostgreSQL içindeki `file_management` veritabanında, kullanıcı ve rol bilgileri ise ayrı `identity_management` veritabanında saklanır.
 
@@ -21,6 +21,16 @@ Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata 
 - Metadata kaydı başarısız olursa MinIO nesnesini geri alma
 - İlgili kayıt türü ve kimliğiyle dosya ilişkilendirme
 - İlgili kayda göre dosya filtreleme
+
+### Metadata cache
+
+- Liste ve metadata detail istekleri için Redis tabanlı cache-aside akışı
+- Detail için 5 dakika, liste sonuçları için 30 saniye varsayılan TTL
+- Upload sonrasında detail cache warm-up ve liste cache invalidation
+- Delete sonrasında detail eviction ve liste cache invalidation
+- Redis kesintisinde isteği başarısız kılmadan PostgreSQL'e dönüş
+- Dosya byte'ları, download/preview stream'leri ve presigned URL'ler cache dışında
+- Cache devre dışıyken aynı servis sözleşmesini koruyan no-op implementasyon
 
 ### Kimlik ve erişim yönetimi
 
@@ -87,6 +97,7 @@ YARP Gateway :8080
    |
    `-- /api/files/* --> File API :8080
                          |
+                         |--> Redis metadata cache
                          |--> file_management
                          `--> MinIO private bucket
 
@@ -136,6 +147,8 @@ identity_management
 
 File API, her dosya isteğinde Identity API'ye çağrı yapmaz. Identity API tarafından imzalanan JWT'yi issuer, audience, süre ve imza bilgileriyle yerel olarak doğrular.
 
+File API metadata liste ve detail okumalarında Redis'i cache-aside katmanı olarak kullanır. Redis kaynak kabul edilmez; cache miss veya Redis bağlantı hatasında PostgreSQL'e dönülür. Dosya içerikleri yalnızca MinIO üzerinden stream edilir.
+
 ### Repository yapısı
 
 ~~~text
@@ -161,6 +174,7 @@ tests/
 
 docs/
 ├── kafka-operations-verification-report.md
+├── redis-cache-verification-report.md
 ├── requirements-evidence.md
 └── verification-report.md
 ~~~
@@ -170,7 +184,7 @@ Katmanların sorumlulukları:
 - `FileManagement.Domain`: Dosya entity'leri ve domain kuralları
 - `FileManagement.Application`: Dosya servisleri, DTO'lar ve soyutlamalar
 - `FileManagement.Contracts`: Versiyonlu integration event envelope ve dosya operasyon contract'ları
-- `FileManagement.Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
+- `FileManagement.Infrastructure`: PostgreSQL, Entity Framework Core, MinIO ve Redis metadata cache implementasyonları
 - `FileManagement.Gateway`: YARP route/cluster yönetimi, API trafiği ve correlation ID başlangıç noktası
 - `FileManagement.Api`: Korumalı dosya endpoint'leri, JWT doğrulaması, OpenAPI ve Swagger
 - `FileManagement.Identity.Infrastructure`: Identity persistence, kullanıcı/rol yönetimi ve JWT üretimi
@@ -182,7 +196,7 @@ Katmanların sorumlulukları:
 - `FileManagement.Identity.UnitTests`: JWT üretim ve doğrulama testleri
 - `FileManagement.Operations.UnitTests`: Kafka event deserialization testleri
 - `FileManagement.Outbox.UnitTests`: Outbox publish cycle ve publisher testleri
-- `FileManagement.UnitTests`: Domain, application, persistence ve outbox entity testleri
+- `FileManagement.UnitTests`: Domain, application, persistence, cache ve outbox entity testleri
 
 ## Authentication Akışı
 
@@ -226,6 +240,7 @@ Kurallar:
 - JWT Bearer Authentication
 - Entity Framework Core
 - PostgreSQL
+- Microsoft distributed cache ve StackExchange.Redis
 - MinIO .NET SDK
 - Serilog
 - Seq
@@ -246,6 +261,7 @@ Kurallar:
 - YARP Reverse Proxy
 - Docker
 - Docker Compose
+- Redis 8
 - Nginx
 - GitHub Actions
 
@@ -268,6 +284,7 @@ Copy-Item ".env.example" ".env"
 `.env` içindeki aşağıdaki değerleri güvenli lokal değerlerle değiştirin:
 
 - `POSTGRES_PASSWORD`
+- `REDIS_PASSWORD`
 - `MINIO_ROOT_PASSWORD`
 - `SEQ_ADMIN_PASSWORD`
 - `JWT_SIGNING_KEY`
@@ -304,6 +321,7 @@ Başlangıç sırasında:
 - `User` ve `Admin` rolleri hazırlanır.
 - İlk admin hesabı gerektiğinde oluşturulur.
 - MinIO bucket'ı hazırlanır.
+- Redis parola doğrulamalı ve persistence kapalı metadata cache olarak başlatılır.
 - Identity veritabanı yoksa `identity-db-init` işi tarafından oluşturulur.
 - Kafka data volume izinleri `kafka-data-init` işi tarafından hazırlanır.
 - Kafka broker healthy olduktan sonra `file-operations.v1` topic'i `kafka-init` işi tarafından oluşturulur.
@@ -317,6 +335,7 @@ Başlangıç sırasında:
 | `postgres` | File ve Identity mantıksal veritabanları |
 | `identity-db-init` | Identity veritabanını hazırlayan tek seferlik init işi |
 | `minio` | Dosya içeriği depolama |
+| `redis` | Liste ve detail metadata cache'i |
 | `kafka-data-init` | Kafka data volume izinlerini hazırlayan tek seferlik init işi |
 | `kafka` | KRaft modunda dosya operasyon event broker'ı |
 | `kafka-init` | `file-operations.v1` topic'ini hazırlayan tek seferlik init işi |
@@ -347,6 +366,7 @@ Başlangıç sırasında:
 | Seq | `http://127.0.0.1:5341` |
 | MinIO API | `http://127.0.0.1:9000` |
 | MinIO Console | `http://127.0.0.1:9001` |
+| Redis | `127.0.0.1:6379` |
 | Kafka | `127.0.0.1:9092` |
 | PostgreSQL | `127.0.0.1:5432` |
 
@@ -573,6 +593,8 @@ docker compose `
 
 `--volumes` seçeneği lokal PostgreSQL, MinIO, Kafka ve Seq verilerini kalıcı olarak siler.
 
+Redis metadata cache'i bilerek kalıcı volume kullanmaz; container yeniden oluşturulduğunda cache PostgreSQL'den güvenli biçimde yeniden dolar.
+
 ## Güvenlik ve Üretim Notları
 
 Mevcut uygulamada JWT authentication, temel role dayalı authorization, parola hashleme, lockout, private MinIO bucket ve merkezi loglama uygulanmıştır.
@@ -592,6 +614,7 @@ Mevcut uygulamada JWT authentication, temel role dayalı authorization, parola h
 - Yedekleme ve geri yükleme
 - Seq alarm ve retention politikaları
 - MinIO lisans ve destek koşulları
+- Redis TLS, ağ izolasyonu, yönetilen servis ve lisans/destek koşulları
 
 MinIO Community binary'si sabitlenmiş kaynak kod tag'inden oluşturulur:
 
@@ -602,5 +625,6 @@ RELEASE.2025-10-15T17-29-55Z
 ## Kanıt ve Doğrulama
 
 - [Gereksinim–kanıt matrisi](docs/requirements-evidence.md)
+- [Redis metadata cache doğrulama raporu](docs/redis-cache-verification-report.md)
 - [Kafka operations doğrulama raporu](docs/kafka-operations-verification-report.md)
 - [YARP Gateway doğrulama raporu](docs/verification-report.md)

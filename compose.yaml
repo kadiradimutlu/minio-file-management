@@ -98,6 +98,34 @@ services:
     networks:
       - file-management-network
 
+  redis:
+    image: "redis:${REDIS_VERSION:-8.8.1-alpine}"
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        exec redis-server \
+          --save "" \
+          --appendonly no \
+          --requirepass "$$REDIS_PASSWORD"
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    mem_limit: 128m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - file-management-network
+
   kafka-data-init:
     image: "apache/kafka:${KAFKA_VERSION:-4.3.1}"
     user: "0:0"
@@ -297,6 +325,16 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__PostgreSql: "Host=postgres;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Redis__Host: "redis"
+      Redis__Port: "6379"
+      Redis__Password: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      Redis__UseSsl: "false"
+      Redis__ConnectTimeoutMilliseconds: "1000"
+      Redis__OperationTimeoutMilliseconds: "500"
+      FileCache__Enabled: "true"
+      FileCache__KeyPrefix: "file-management:production:files:v1"
+      FileCache__DetailTtlSeconds: "300"
+      FileCache__ListTtlSeconds: "30"
       Minio__Endpoint: "minio:9000"
       Minio__PublicEndpoint: "127.0.0.1:${MINIO_API_PORT:-9000}"
       Minio__AccessKey: "${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}"

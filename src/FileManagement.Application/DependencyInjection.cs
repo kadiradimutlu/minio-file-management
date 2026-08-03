@@ -1,4 +1,5 @@
 using FileManagement.Application.Files;
+using FileManagement.Application.Abstractions.Caching;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FileManagement.Application;
@@ -12,8 +13,16 @@ public static class DependencyInjection
             TimeProvider.System);
 
         services.AddScoped<
-            IFileManagementService,
             FileManagementService>();
+
+        services.AddScoped<
+            IFileManagementService>(
+            serviceProvider =>
+                new CachedFileManagementService(
+                    serviceProvider.GetRequiredService<
+                        FileManagementService>(),
+                    serviceProvider.GetRequiredService<
+                        IFileMetadataCache>()));
 
         return services;
     }
