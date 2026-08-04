@@ -159,10 +159,10 @@ jobs:
           docker image inspect minio-file-management/outbox-worker:local
           docker image inspect minio-file-management/reporting-worker:local
           docker image inspect minio-file-management/web:local
-          docker image inspect "$(
-            docker compose \
-              --env-file .env.example \
-              images \
-              --quiet \
-              minio
+          minio_version="$(
+            grep '^MINIO_VERSION=' .env.example |
+              cut -d= -f2-
           )"
+          test -n "$minio_version"
+          docker image inspect \
+            "minio-file-management/minio:${minio_version}"
