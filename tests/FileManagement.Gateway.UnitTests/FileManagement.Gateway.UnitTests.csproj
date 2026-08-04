@@ -10,21 +10,26 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\FileManagement.Api\FileManagement.Api.csproj" />
-    <ProjectReference Include="..\..\src\FileManagement.Identity.Api\FileManagement.Identity.Api.csproj" />
-    <ProjectReference Include="..\..\src\FileManagement.Identity.Infrastructure\FileManagement.Identity.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\FileManagement.Gateway\FileManagement.Gateway.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\src\FileManagement.Gateway\appsettings.json">
+      <Link>gateway-appsettings.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
