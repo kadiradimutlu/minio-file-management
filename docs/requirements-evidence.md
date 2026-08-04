@@ -50,8 +50,9 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Ayrı Identity persistence katmanı | `FileManagement.Identity.Infrastructure` | Solution ve build doğrulaması |
 | Kullanıcı ve rol yönetimi | ASP.NET Core Identity | Admin/User seed ve login cevabı |
 | JWT üretimi | `JwtTokenService` | Identity birim testi ve gerçek login |
-| JWT doğrulaması | File API JWT Bearer yapılandırması | Geçerli token `200`, bozuk token `401` |
-| Role dayalı authorization | Admin endpoint'i | `/api/auth/admin/ping` sonucu `200` |
+| JWT doğrulaması | File API JWT Bearer yapılandırması | Geçerli token; yanlış issuer/audience/key ve expired token testleri |
+| Controller authorization sınırları | Controller ve action attribute'ları | Auth/File default authorize, login/register anonymous testleri |
+| Role dayalı authorization | Admin endpoint'i | Attribute testi ve `/api/auth/admin/ping` sonucu `200` |
 | Anonim File API erişimi engellenmeli | `[Authorize]` | Gateway üzerinden `401` |
 | OpenAPI Bearer desteği | `BearerSecuritySchemeTransformer` | OpenAPI doğrulaması |
 
@@ -64,7 +65,8 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Identity trafiği ayrılmalı | `identityRoute` ve `identityCluster` | Login, me ve admin ping sonuçları `200` |
 | File trafiği ayrılmalı | `fileRoute` ve `fileCluster` | Listeleme, upload, download ve delete testleri |
 | Bilinmeyen route reddedilmeli | Yalnızca tanımlı YARP route'ları | `/api/unknown` sonucu `404` |
-| Request boyutu sınırları | Route bazlı `MaxRequestBodySize` | Identity ve File route configuration kontrolü |
+| Request boyutu sınırları | Route bazlı `MaxRequestBodySize` | Gateway configuration birim testleri |
+| Correlation ID girdisi sınırlandırılmalı | `CorrelationIdMiddleware` | Geçerli, geçersiz ve aşırı uzun header testleri |
 | Docker image olmalı | `docker/gateway/Dockerfile` | Image build ve inspect |
 | Compose servisi olmalı | `gateway` servisi | Container `healthy` |
 | Nginx downstream servislere doğrudan gitmemeli | `proxy_pass http://gateway:8080` | Eski API hedeflerinin bulunmadığı doğrulandı |
@@ -86,8 +88,10 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Gereksinim | Uygulama kanıtı | Doğrulama |
 |---|---|---|
 | Login ekranı | `LoginScreen` | Gerçek admin login |
-| Oturum saklama | `sessionStorage` | Frontend authentication akışı |
+| Oturum saklama | `sessionStorage` | Auth session birim testleri ve gerçek login |
 | Bearer interceptor | `httpClient.ts` | Gateway üzerinden korumalı istek |
+| Upload validation | `fileUploadValidation.ts` | Uzantı, MIME type ve boyut testleri |
+| File table davranışı | `FileTable` | Render ve action callback component testleri |
 | Nginx tek API hedefi kullanmalı | `docker/web/nginx.conf` | Bütün `/api/*` trafiği Gateway'e gider |
 | Vite geliştirme proxy'si Gateway'i kullanmalı | `vite.config.ts` | Hedef port `5070` |
 | JWT download ve preview | Axios Blob akışı | Download SHA-256 testi |
@@ -131,22 +135,31 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Kontrol | Sonuç |
 |---|---|
 | Solution Release build | Başarılı |
-| Toplam birim testi | 83 / 83 başarılı |
+| Backend toplam testi | 99 / 99 başarılı |
+| Frontend testi | 11 / 11 başarılı |
+| Genel otomatik test | 110 / 110 başarılı |
 | Contracts testleri | 4 / 4 başarılı |
 | Operations testleri | 3 / 3 başarılı |
 | Outbox testleri | 10 / 10 başarılı |
-| Identity testleri | 1 / 1 başarılı |
+| Identity ve authorization testleri | 11 / 11 başarılı |
+| Gateway testleri | 6 / 6 başarılı |
 | Domain, application ve infrastructure testleri | 48 / 48 başarılı |
 | Reporting testleri | 17 / 17 başarılı |
 | NuGet vulnerability audit | Güvenlik açığı bulunmadı |
 | Frontend lint | 0 hata, 0 uyarı |
+| Frontend testleri | 11 / 11 başarılı |
 | Frontend production build | Başarılı |
+| npm vulnerability audit | Açık bulunmadı |
+| MinIO image build | Başarılı |
 | Gateway image build | Başarılı |
 | Operations Worker image build | Başarılı |
+| Outbox Worker image build | Başarılı |
 | Reporting Worker image build | Başarılı |
 | Web image build | Başarılı |
 | Docker Compose servis sayısı | 15 |
-| Web, Gateway, File API, Identity API ve Seq health | `200` |
+| Uzun yaşayan servis restart politikası | 12 / 12 `unless-stopped` |
+| Tek-seferlik init işleri | 3 / 3 `Exited (0)` |
+| Web, Gateway, File API, Identity API ve Reporting health | 5 / 5 `200` |
 | Gateway container health | `healthy` |
 | Redis container health | `healthy` |
 | Reporting container health | `healthy` |
@@ -156,7 +169,8 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Download hash doğrulaması | SHA-256 eşleşti |
 | Pending outbox mesajı | `0` |
 | Kafka consumer group lag | `0` |
-| Working tree kontrolü | Değişiklikler yalnız Hangfire reporting milestone kapsamındadır; commit oluşturulmadı |
+| İzole final E2E | Başarılı; geçici container, network ve volume'lar temizlendi |
+| Working tree kontrolü | Değişiklikler finalizasyon milestone kapsamındadır; commit oluşturulmadı |
 
 Vite, ana JavaScript chunk'ı için 500 kB sınır uyarısı vermektedir. Build başarılıdır; code splitting daha sonraki performans iyileştirmesi olarak izlenecektir.
 

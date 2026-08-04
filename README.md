@@ -179,6 +179,7 @@ src/
 
 tests/
 ├── FileManagement.Contracts.UnitTests
+├── FileManagement.Gateway.UnitTests
 ├── FileManagement.Identity.UnitTests
 ├── FileManagement.Operations.UnitTests
 ├── FileManagement.Outbox.UnitTests
@@ -186,11 +187,16 @@ tests/
 └── FileManagement.UnitTests
 
 docs/
+├── demo-runbook.md
+├── final-project-report.md
 ├── hangfire-reporting-verification-report.md
 ├── kafka-operations-verification-report.md
 ├── redis-cache-verification-report.md
 ├── requirements-evidence.md
 └── verification-report.md
+
+scripts/
+└── verify-isolated-e2e.ps1
 ~~~
 
 Katmanların sorumlulukları:
@@ -208,7 +214,8 @@ Katmanların sorumlulukları:
 - `FileManagement.Reporting.Worker`: Hangfire ile günlük dosya operasyon raporlarını üreten, güvenli dashboard ve rapor API'si sunan worker
 - `FileManagement.Web`: React kullanıcı arayüzü, oturum yönetimi ve API istemcileri
 - `FileManagement.Contracts.UnitTests`: Event contract ve JSON uyumluluk testleri
-- `FileManagement.Identity.UnitTests`: JWT üretim ve doğrulama testleri
+- `FileManagement.Gateway.UnitTests`: YARP route/cluster ve correlation ID middleware testleri
+- `FileManagement.Identity.UnitTests`: JWT üretim, negatif doğrulama ve authorization boundary testleri
 - `FileManagement.Operations.UnitTests`: Kafka event deserialization testleri
 - `FileManagement.Outbox.UnitTests`: Outbox publish cycle ve publisher testleri
 - `FileManagement.Reporting.UnitTests`: Rapor parser, hesaplama, idempotency, retry ve dashboard kimlik doğrulama testleri
@@ -558,6 +565,7 @@ dotnet test `
 Push-Location "src\FileManagement.Web"
 
 npm ci
+npm test
 npm run lint
 npm run build
 npm audit --audit-level=high
@@ -594,12 +602,13 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 
 - NuGet restore ve güvenlik denetimi
 - Bütün solution için Release build
-- File, Identity, Contracts, Outbox, Operations ve Reporting birim testleri
+- File, Identity, Gateway, Contracts, Outbox, Operations ve Reporting birim testleri
 - Zafiyetli NuGet paket raporu
 
 ### Frontend
 
 - `npm ci`
+- Vitest component ve auth testleri
 - Lint
 - Production build
 - Yüksek önem seviyeli npm güvenlik denetimi
@@ -607,8 +616,8 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 ### Containers
 
 - Docker Compose yapılandırma kontrolü
-- Servis listesinin doğrulanması
-- File API, Identity API, Gateway, Operations Worker, Reporting Worker ve Web image build işlemleri
+- Servis sayısının tam 15 olarak doğrulanması
+- MinIO, File API, Identity API, Gateway, Operations Worker, Outbox Worker, Reporting Worker ve Web image build işlemleri
 - Oluşturulan image'ların doğrulanması
 
 ## Servisleri Durdurma
@@ -666,6 +675,8 @@ RELEASE.2025-10-15T17-29-55Z
 
 ## Kanıt ve Doğrulama
 
+- [Final proje raporu](docs/final-project-report.md)
+- [Demo ve operasyon runbook'u](docs/demo-runbook.md)
 - [Gereksinim–kanıt matrisi](docs/requirements-evidence.md)
 - [Hangfire reporting doğrulama raporu](docs/hangfire-reporting-verification-report.md)
 - [Redis metadata cache doğrulama raporu](docs/redis-cache-verification-report.md)

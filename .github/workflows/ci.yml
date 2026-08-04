@@ -90,6 +90,10 @@ jobs:
         working-directory: src/FileManagement.Web
         run: npm run lint
 
+      - name: Run frontend tests
+        working-directory: src/FileManagement.Web
+        run: npm test
+
       - name: Build frontend
         working-directory: src/FileManagement.Web
         run: npm run build
@@ -119,22 +123,30 @@ jobs:
           config
           --quiet
 
-      - name: List Compose services
-        run: >
-          docker compose
-          --env-file .env.example
-          config
-          --services
+      - name: Verify Compose service inventory
+        run: |
+          services="$(
+            docker compose \
+              --env-file .env.example \
+              config \
+              --services
+          )"
+          printf '%s\n' "$services"
+
+          service_count="$(printf '%s\n' "$services" | wc -l)"
+          test "$service_count" -eq 15
 
       - name: Build application images
         run: >
           docker compose
           --env-file .env.example
           build
+          minio
           api
           identity-api
           gateway
           operations-worker
+          outbox-worker
           reporting-worker
           web
 
@@ -144,5 +156,13 @@ jobs:
           docker image inspect minio-file-management/identity-api:local
           docker image inspect minio-file-management/gateway:local
           docker image inspect minio-file-management/operations-worker:local
+          docker image inspect minio-file-management/outbox-worker:local
           docker image inspect minio-file-management/reporting-worker:local
           docker image inspect minio-file-management/web:local
+          docker image inspect "$(
+            docker compose \
+              --env-file .env.example \
+              images \
+              --quiet \
+              minio
+          )"
