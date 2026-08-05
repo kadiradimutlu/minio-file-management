@@ -129,6 +129,42 @@ services:
     networks:
       - file-management-network
 
+  redisinsight:
+    image: "redis/redisinsight:${REDISINSIGHT_VERSION:-3.8.0}"
+    restart: unless-stopped
+    environment:
+      RI_APP_HOST: "0.0.0.0"
+      RI_APP_PORT: "5540"
+      RI_ACCEPT_TERMS_AND_CONDITIONS: "true"
+      RI_DATABASE_MANAGEMENT: "false"
+      RI_ENCRYPTION_KEY: "${REDISINSIGHT_ENCRYPTION_KEY:?REDISINSIGHT_ENCRYPTION_KEY is required}"
+      RI_REDIS_HOST: "redis"
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: "File Management Cache"
+      RI_REDIS_USERNAME: "default"
+      RI_REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      RI_REDIS_TLS: "false"
+    ports:
+      - "127.0.0.1:${REDISINSIGHT_PORT:-5540}:5540"
+    volumes:
+      - redisinsight-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --tries=1 --spider http://127.0.0.1:5540/api/health/ || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - file-management-network
+
   kafka-data-init:
     image: "apache/kafka:${KAFKA_VERSION:-4.3.1}"
     user: "0:0"
@@ -218,6 +254,36 @@ services:
       kafka:
         condition: service_healthy
     restart: "no"
+    networks:
+      - file-management-network
+
+  kafbat-ui:
+    image: "ghcr.io/kafbat/kafka-ui:${KAFBAT_UI_VERSION:-v1.5.0}"
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "MinIO File Management"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:19092"
+      KAFKA_CLUSTERS_0_READONLY: "true"
+      DYNAMIC_CONFIG_ENABLED: "false"
+      AUTH_TYPE: "LOGIN_FORM"
+      SPRING_SECURITY_USER_NAME: "${KAFBAT_UI_USERNAME:?KAFBAT_UI_USERNAME is required}"
+      SPRING_SECURITY_USER_PASSWORD: "${KAFBAT_UI_PASSWORD:?KAFBAT_UI_PASSWORD is required}"
+    ports:
+      - "127.0.0.1:${KAFBAT_UI_PORT:-8085}:8080"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    mem_limit: 512m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --tries=1 --spider http://127.0.0.1:8080/actuator/health || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     networks:
       - file-management-network
 
@@ -481,6 +547,7 @@ volumes:
   minio-data:
   kafka-data:
   seq-data:
+  redisinsight-data:
 
 networks:
   file-management-network:

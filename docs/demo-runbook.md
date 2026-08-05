@@ -39,10 +39,10 @@ docker compose `
 
 Beklenen durum:
 
-- 12 uzun yaşayan servis çalışır ve sağlıklıdır.
+- 14 uzun yaşayan servis çalışır ve sağlıklıdır.
 - `identity-db-init`, `kafka-data-init` ve `kafka-init` başarıyla
   tamamlanıp `Exited (0)` durumunda kalır.
-- Compose toplam 15 servis içerir.
+- Compose toplam 17 servis içerir.
 
 Durumu görüntülemek için:
 
@@ -53,7 +53,7 @@ docker compose `
     --all
 ```
 
-## On Dakikalık Demo Akışı
+## On Beş Dakikalık Demo Akışı
 
 1. Web uygulamasını `http://127.0.0.1:8080` adresinde açın.
 2. `.env` içindeki admin hesabıyla oturum açın.
@@ -67,6 +67,20 @@ docker compose `
    ID içeren yapılandırılmış logları gösterin.
 10. Hangfire dashboard'u `http://127.0.0.1:5100/hangfire` adresinde
     açıp recurring job ve tamamlanan job durumlarını gösterin.
+11. Kafbat UI'ı `http://127.0.0.1:8085` adresinde açıp
+    `file-operations.v1` topic mesajlarını, üç partition'ı ve
+    `operations-worker-v1` consumer lag değerini gösterin.
+12. RedisInsight'ı `http://127.0.0.1:5540` adresinde açıp metadata
+    cache key'lerini gösterin.
+13. Reporting Swagger'ı `http://127.0.0.1:5100/swagger` adresinde
+    açıp Basic Authentication ve günlük rapor endpoint'lerini
+    gösterin.
+14. pgAdmin'de `stored_files`, `outbox_messages`,
+    `daily_file_operation_reports` ve `hangfire` şemasını gösterin.
+
+Her arayüzün bağlantı ve güvenli kullanım ayrıntıları
+[Görsel Yönetim Arayüzleri Rehberi](visual-management-guide.md)
+içinde bulunur.
 
 ## Otomatik Final Doğrulaması
 
@@ -80,9 +94,11 @@ anında üretilen rastgele parolalar ve ayrı volume'lar oluşturur:
 
 Betik aşağıdaki kontrolleri yapar:
 
-- 15 servislik Compose configuration ve temiz image build
-- 12 uzun yaşayan servis ve 3 başarılı tek-seferlik init işi
-- Web, Gateway, File API, Identity API ve Reporting health
+- 17 servislik Compose configuration ve temiz image build
+- 14 uzun yaşayan servis ve 3 başarılı tek-seferlik init işi
+- Web, Gateway, File API, Identity API, Reporting, Kafbat UI ve
+  RedisInsight health
+- Reporting Swagger ve Basic Authentication OpenAPI sözleşmesi
 - anonymous erişim, hatalı login ve admin JWT sınırları
 - upload, list, detail, download, preview, presigned URL ve delete
 - upload/download/preview/presigned içerikleri için SHA-256 eşitliği
@@ -141,10 +157,10 @@ Pop-Location
 | Backend testleri | 99 / 99 |
 | Frontend testleri | 11 / 11 |
 | Toplam otomatik test | 110 / 110 |
-| Compose servisleri | 15 |
-| Uzun yaşayan servisler | 12 |
+| Compose servisleri | 17 |
+| Uzun yaşayan servisler | 14 |
 | Başarılı init işleri | 3 |
-| Health endpoint'leri | 5 / 5 |
+| Health endpoint'leri | 7 / 7 |
 | Pending outbox | 0 |
 | Maksimum Kafka lag | 0 |
 | Günlük rapor operasyonları | 1 upload / 1 download / 1 delete |
@@ -178,7 +194,20 @@ correlation ID ile bulunabilir.
 ### Kafka lag sıfıra inmiyor
 
 `operations-worker-v1` consumer group durumunu, Operations Worker
-loglarını ve `file-operations.v1` topic'ini kontrol edin.
+loglarını ve Kafbat UI içindeki `file-operations.v1` topic'ini
+kontrol edin.
+
+### Kafbat UI giriş ekranı açılmıyor
+
+`kafbat-ui` container health durumunu ve `KAFBAT_UI_PORT` değerini
+kontrol edin. Kullanıcı adı ve parola `.env` içindeki
+`KAFBAT_UI_USERNAME` ve `KAFBAT_UI_PASSWORD` değerleridir.
+
+### RedisInsight bağlantısı görünmüyor
+
+`redisinsight` ve `redis` container health durumlarını kontrol edin.
+Bağlantı Compose tarafından `File Management Cache` adıyla
+hazırlanır. RedisInsight içinden key silmeyin veya flush çalıştırmayın.
 
 ### Reporting erişimi 401
 
@@ -196,5 +225,6 @@ docker compose `
     down
 ```
 
-`--volumes` seçeneği PostgreSQL, MinIO, Kafka ve Seq verilerini
-siler. Açık bir veri temizleme kararı olmadan kullanılmamalıdır.
+`--volumes` seçeneği PostgreSQL, MinIO, Kafka, Seq ve RedisInsight
+verilerini siler. Açık bir veri temizleme kararı olmadan
+kullanılmamalıdır.

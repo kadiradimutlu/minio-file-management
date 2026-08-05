@@ -7,8 +7,8 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
 
 $projectName = "minio-file-management-final-audit"
-$expectedServiceCount = 15
-$expectedRunningServiceCount = 12
+$expectedServiceCount = 17
+$expectedRunningServiceCount = 14
 $expectedOneShotServiceCount = 3
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $composeFile = Join-Path $repoRoot "compose.yaml"
@@ -30,6 +30,8 @@ $environmentNames = @(
     "POSTGRES_PORT"
     "REDIS_PASSWORD"
     "REDIS_PORT"
+    "REDISINSIGHT_PORT"
+    "REDISINSIGHT_ENCRYPTION_KEY"
     "MINIO_ROOT_USER"
     "MINIO_ROOT_PASSWORD"
     "MINIO_API_PORT"
@@ -41,6 +43,9 @@ $environmentNames = @(
     "REPORTING_DASHBOARD_USERNAME"
     "REPORTING_DASHBOARD_PASSWORD"
     "KAFKA_PORT"
+    "KAFBAT_UI_PORT"
+    "KAFBAT_UI_USERNAME"
+    "KAFBAT_UI_PASSWORD"
     "WEB_PORT"
     "SEQ_PORT"
     "SEQ_ADMIN_PASSWORD"
@@ -52,6 +57,7 @@ $environmentNames = @(
 $ports = @{
     POSTGRES_PORT = 15432
     REDIS_PORT = 16379
+    REDISINSIGHT_PORT = 15540
     MINIO_API_PORT = 19000
     MINIO_CONSOLE_PORT = 19001
     API_PORT = 15080
@@ -59,6 +65,7 @@ $ports = @{
     GATEWAY_PORT = 15070
     REPORTING_PORT = 15100
     KAFKA_PORT = 19092
+    KAFBAT_UI_PORT = 18085
     WEB_PORT = 18080
     SEQ_PORT = 15341
 }
@@ -107,10 +114,16 @@ function Set-IsolatedEnvironment {
         POSTGRES_USER = "final_audit"
         POSTGRES_PASSWORD = New-RandomSecret
         REDIS_PASSWORD = New-RandomSecret
+        REDISINSIGHT_ENCRYPTION_KEY =
+            New-RandomSecret 48
         MINIO_ROOT_USER = "finalaudit"
         MINIO_ROOT_PASSWORD = New-RandomSecret
         REPORTING_DASHBOARD_USERNAME = "reporting-final-audit"
         REPORTING_DASHBOARD_PASSWORD =
+            "Aa1!" + (New-RandomSecret)
+        KAFBAT_UI_USERNAME =
+            "kafka-final-audit"
+        KAFBAT_UI_PASSWORD =
             "Aa1!" + (New-RandomSecret)
         SEQ_ADMIN_PASSWORD =
             "Aa1!" + (New-RandomSecret)
@@ -525,6 +538,8 @@ try {
         "http://127.0.0.1:$($ports.API_PORT)/health"
         "http://127.0.0.1:$($ports.IDENTITY_API_PORT)/health"
         "http://127.0.0.1:$($ports.REPORTING_PORT)/health"
+        "http://127.0.0.1:$($ports.KAFBAT_UI_PORT)/actuator/health"
+        "http://127.0.0.1:$($ports.REDISINSIGHT_PORT)/api/health/"
     )
 
     foreach ($uri in $healthUris) {
@@ -534,6 +549,42 @@ try {
             -Response $response `
             -Expected 200 `
             -Description $uri
+    }
+
+    $reportingSwagger =
+        Send-HttpRequest `
+            -Uri (
+                "http://127.0.0.1:" +
+                "$($ports.REPORTING_PORT)/swagger/index.html"
+            )
+
+    Assert-StatusCode `
+        -Response $reportingSwagger `
+        -Expected 200 `
+        -Description "Reporting Swagger UI"
+
+    $reportingOpenApi =
+        Send-HttpRequest `
+            -Uri (
+                "http://127.0.0.1:" +
+                "$($ports.REPORTING_PORT)/openapi/v1.json"
+            )
+
+    Assert-StatusCode `
+        -Response $reportingOpenApi `
+        -Expected 200 `
+        -Description "Reporting OpenAPI document"
+
+    $reportingOpenApiDocument =
+        $reportingOpenApi.Body |
+        ConvertFrom-Json
+
+    if (
+        $reportingOpenApiDocument.components.securitySchemes.Basic.scheme -ne
+        "basic"
+    )
+    {
+        throw "Reporting OpenAPI Basic security scheme was not found."
     }
 
     $gatewayBase =
@@ -622,7 +673,7 @@ try {
         -Expected 200 `
         -Description "Administrator authorization"
 
-    Write-Host "Health endpoints: 5/5"
+    Write-Host "Health endpoints: 7/7"
     Write-Host "Anonymous file access: 401"
     Write-Host "Invalid login: 401"
     Write-Host "Administrator JWT flow: valid"

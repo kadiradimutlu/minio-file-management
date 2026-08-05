@@ -1,5 +1,6 @@
 using FileManagement.Infrastructure.Persistence;
 using FileManagement.Reporting.Worker.Endpoints;
+using FileManagement.Reporting.Worker.OpenApi;
 using FileManagement.Reporting.Worker.Options;
 using FileManagement.Reporting.Worker.Reporting;
 using FileManagement.Reporting.Worker.Security;
@@ -191,6 +192,19 @@ builder.Services.AddSingleton<
 builder.Services.AddTransient<
     DailyFileOperationsReportJob>();
 
+builder.Services.AddOpenApi(
+    options =>
+    {
+        options.AddDocumentTransformer<
+            ReportingDocumentTransformer>();
+
+        options.AddDocumentTransformer<
+            BasicSecuritySchemeTransformer>();
+
+        options.AddOperationTransformer<
+            AuthorizationOperationTransformer>();
+    });
+
 builder.Services.AddHealthChecks();
 
 var app =
@@ -265,6 +279,17 @@ app.UseSerilogRequestLogging(
             };
     });
 
+app.UseSwaggerUI(
+    options =>
+    {
+        options.SwaggerEndpoint(
+            "/openapi/v1.json",
+            "File Management Reporting API v1");
+
+        options.RoutePrefix =
+            "swagger";
+    });
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -282,6 +307,7 @@ app.UseHangfireDashboard(
             "File Management Reporting"
     });
 
+app.MapOpenApi();
 app.MapHealthChecks("/health");
 app.MapReportingEndpoints();
 

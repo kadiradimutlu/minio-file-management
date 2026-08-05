@@ -156,13 +156,16 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Outbox Worker image build | Başarılı |
 | Reporting Worker image build | Başarılı |
 | Web image build | Başarılı |
-| Docker Compose servis sayısı | 15 |
-| Uzun yaşayan servis restart politikası | 12 / 12 `unless-stopped` |
+| Docker Compose servis sayısı | 17 |
+| Uzun yaşayan servis restart politikası | 14 / 14 `unless-stopped` |
 | Tek-seferlik init işleri | 3 / 3 `Exited (0)` |
-| Web, Gateway, File API, Identity API ve Reporting health | 5 / 5 `200` |
+| Web, Gateway, File API, Identity API, Reporting, Kafbat UI ve RedisInsight health | 7 / 7 `200` |
 | Gateway container health | `healthy` |
 | Redis container health | `healthy` |
 | Reporting container health | `healthy` |
+| Kafbat UI | `healthy`, login form ve salt okunur Kafka cluster |
+| RedisInsight | `healthy`, önceden tanımlı Redis bağlantısı |
+| Reporting Swagger ve OpenAPI | `200`, Basic security scheme mevcut |
 | Hangfire Dashboard authentication | Kimliksiz `401`, yetkili `200` |
 | Reporting manual enqueue | `202`, rapor satırı üretildi |
 | Redis kesintisinde PostgreSQL fallback | Başarılı |
@@ -170,7 +173,7 @@ Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway
 | Pending outbox mesajı | `0` |
 | Kafka consumer group lag | `0` |
 | İzole final E2E | Başarılı; geçici container, network ve volume'lar temizlendi |
-| Working tree kontrolü | Değişiklikler finalizasyon milestone kapsamındadır; commit oluşturulmadı |
+| Working tree kontrolü | Değişiklikler görsel yönetim arayüzleri milestone kapsamındadır; commit oluşturulmadı |
 
 Vite, ana JavaScript chunk'ı için 500 kB sınır uyarısı vermektedir. Build başarılıdır; code splitting daha sonraki performans iyileştirmesi olarak izlenecektir.
 
