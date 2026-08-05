@@ -1,124 +1,151 @@
-# Doğrulama Raporu
+# YARP API Gateway Doğrulama Raporu
 
-## Tarih
+- Tarih: 30 Temmuz 2026
+- Branch: `feature/yarp-gateway`
+- Son uygulama commit'i: `ccf7828`
+- Hedef branch: `develop`
 
-22 Temmuz 2026
+## Kapsam
 
-## Doğrulanan Branch
+Bu doğrulama aşağıdaki yeni mimariyi kapsar:
 
 ~~~text
-feature/related-record-association
+Browser
+   |
+   v
+Web / Nginx
+   |
+   v
+YARP Gateway
+   |
+   |-- Identity API
+   `-- File API
 ~~~
 
-## Otomatik Kontroller
+Gateway authentication verisi üretmez. Identity API tarafından üretilen Bearer token'ı ilgili downstream servise iletir. File API JWT doğrulamasını kendi içinde yapmaya devam eder.
+
+## Uygulama Değişiklikleri
+
+- Ayrı `FileManagement.Gateway` ASP.NET Core projesi eklendi.
+- `Yarp.ReverseProxy 2.3.0` paketi eklendi.
+- Identity ve File servisleri için ayrı route ve cluster tanımları eklendi.
+- Gateway health endpoint'i eklendi.
+- Serilog Console ve Seq loglama eklendi.
+- Correlation ID middleware'i eklendi.
+- Üretilen correlation ID downstream request header'ına yazıldı.
+- Gateway Docker image'ı eklendi.
+- Docker Compose'a `gateway` servisi eklendi.
+- Nginx yalnızca Gateway'e yönlendirildi.
+- Vite geliştirme proxy'si Gateway portuna yönlendirildi.
+- Container CI kapsamına Gateway build ve image inspect eklendi.
+
+## Statik Doğrulamalar
 
 | Kontrol | Sonuç |
 |---|---|
-| Backend Release build | Başarılı |
-| xUnit testleri | 14 / 14 başarılı |
-| EF Core pending model changes | Değişiklik yok |
-| Frontend lint | 0 uyarı, 0 hata |
+| Branch | `feature/yarp-gateway` |
+| Solution projesi | `FileManagement.Gateway` bulundu |
+| YARP paketi | `2.3.0` |
+| Route sayısı | 2 |
+| Cluster sayısı | 2 |
+| Identity route | `/api/auth/{**catch-all}` |
+| File route | `/api/files/{**catch-all}` |
+| Compose servis sayısı | 8 |
+| Nginx hedefi | `gateway:8080` |
+| Vite hedefi | `127.0.0.1:5070` |
+| CI Gateway build | Tanımlı |
+| CI Gateway image inspect | Tanımlı |
+
+## Build ve Test Sonuçları
+
+| Kontrol | Sonuç |
+|---|---|
+| .NET Release build | Başarılı |
+| Birim testleri | 15 / 15 başarılı |
+| NuGet vulnerability kontrolü | Güvenlik açığı bulunmadı |
+| Frontend lint | 0 hata, 0 uyarı |
 | Frontend production build | Başarılı |
-| Docker Compose build | Başarılı |
-| Git whitespace kontrolü | Başarılı |
+| Gateway Docker image build | Başarılı |
+| Web Docker image build | Başarılı |
+| Compose configuration | Geçerli |
 
-Vite production build sırasında bundle boyutuyla ilgili performans uyarısı görüntülenmiştir. Bu uyarı build işlemini başarısız kılmamıştır.
+Frontend build sırasında ana JavaScript chunk'ının 500 kB sınırını aştığına ilişkin bloklayıcı olmayan Vite uyarısı devam etmektedir.
 
-## Docker Servisleri
+## Container Health Sonuçları
 
-Aşağıdaki dört servis healthy durumda doğrulanmıştır:
-
-- `postgres`
-- `minio`
-- `api`
-- `web`
-
-## İlgili Kayıt API Smoke Testi
-
-Kullanılan örnek ilişki:
-
-~~~text
-relatedRecordType = Student
-relatedRecordId   = UUID
-~~~
-
-| Test | Beklenen | Sonuç |
-|---|---|---|
-| İlişkili dosya yükleme | `201 Created` | Başarılı |
-| Upload cevabında ilişki alanları | Doğru değerler | Başarılı |
-| İlgili kayda göre filtreleme | Tek eşleşen dosya | Başarılı |
-| Metadata detay endpoint'i | İlişki alanları mevcut | Başarılı |
-| Yalnızca ilişki türüyle upload | `400 Bad Request` | Başarılı |
-| Yalnızca ilişki türüyle listeleme | `400 Bad Request` | Başarılı |
-
-## PostgreSQL Doğrulaması
-
-Aşağıdaki kolonlar doğrulanmıştır:
-
-| Kolon | Nullable | Maksimum uzunluk |
-|---|---|---:|
-| `related_record_type` | Evet | 100 |
-| `related_record_id` | Evet | 255 |
-
-Doğrulanan index:
-
-~~~text
-ix_stored_files_related_record
-~~~
-
-Index kolon sırası:
-
-~~~text
-related_record_type, related_record_id
-~~~
-
-## Dosya Bütünlüğü
-
-Kaynak dosya ve aşağıdaki üç erişim yöntemi için SHA-256 değerlerinin aynı olduğu doğrulanmıştır:
-
-- Doğrudan download endpoint'i
-- Preview endpoint'i
-- Presigned MinIO URL'si
-
-Bu sonuç dosya içeriğinin upload ve download akışlarında değişmediğini doğrular.
-
-## OpenAPI ve Swagger
-
-| Endpoint | HTTP sonucu |
+| Servis | Sonuç |
 |---|---:|
-| `/openapi/v1.json` | 200 |
-| `/swagger/index.html` | 200 |
-| `/swagger` | 200 |
+| Web | `200` |
+| Gateway | `200` |
+| File API | `200` |
+| Identity API | `200` |
+| Seq | `200` |
+| Gateway container | `healthy` |
+| `identity-db-init` | `Exited (0)` |
 
-OpenAPI dokümanında aşağıdaki alanlar doğrulanmıştır:
+`identity-db-init`, veritabanını hazırlayan tek seferlik bir iş olduğu için başarılı tamamlandıktan sonra `Exited (0)` durumunda kalır.
+
+## Gateway Routing Testleri
+
+| İstek | Beklenen | Sonuç |
+|---|---:|---:|
+| Bilinmeyen `/api/unknown` route'u | `404` | `404` |
+| Anonim `/api/files` | `401` | `401` |
+| Admin login | `200` | `200` |
+| Current user | `200` | `200` |
+| Admin ping | `200` | `200` |
+| Yetkili dosya listesi | `200` | `200` |
+| Bozulmuş JWT | `401` | `401` |
+
+Login cevabında `Admin` ve `User` rolleri doğrulandı.
+
+## Dosya Yaşam Döngüsü
+
+Gateway ve Nginx üzerinden aşağıdaki gerçek dosya yaşam döngüsü çalıştırıldı:
+
+1. `text/plain` dosyası multipart olarak yüklendi.
+2. Upload sonucu `201 Created` oldu.
+3. Dosya `GatewayValidation` ilişkisiyle kaydedildi.
+4. İlgili kayda göre filtreleme tam olarak bir dosya döndürdü.
+5. Dosya JWT ile indirildi.
+6. Kaynak ve indirilen dosyanın SHA-256 değerleri eşleşti.
+7. Dosya silindi ve `204 No Content` döndü.
+8. Silinen dosyanın detail isteği `404 Not Found` döndü.
+
+## Correlation ID
+
+İstemci tarafından gönderilen aşağıdaki biçimde correlation ID:
 
 ~~~text
-relatedRecordType
-relatedRecordId
+gateway-container-<guid>
 ~~~
 
-## Silme ve Temizlik
+Nginx ve Gateway üzerinden File API'ye taşındı ve response içinde aynı değerle döndü.
 
-Silme sonrasında:
+Gateway middleware'i correlation ID bulunmadığında yeni değer üretir ve:
 
-- Delete endpoint'i `204 No Content` döndürdü.
-- Metadata detail endpoint'i `404 Not Found` döndürdü.
-- Filtreli liste boş dizi döndürdü.
-- PostgreSQL kalan kayıt sayısı `0` oldu.
-- Eski presigned URL üzerinden MinIO nesnesine erişim reddedildi.
+- `HttpContext.TraceIdentifier` değerine,
+- downstream request içindeki `X-Correlation-ID` header'ına,
+- response içindeki `X-Correlation-ID` header'ına,
+- Serilog log context'ine
 
-## Tarayıcı Smoke Testi
+ekler.
 
-Aşağıdaki frontend davranışları manuel olarak doğrulanmıştır:
+## Log Kontrolü
 
-1. İlgili kayıt türü ve kimliği alanları görüntülendi.
-2. Yalnızca bir ilişki alanı doldurulduğunda upload engellendi.
-3. İki ilişki alanıyla dosya başarıyla yüklendi.
-4. İlişki bilgileri dosya tablosunda görüntülendi.
-5. İlgili kayda göre filtreleme çalıştı.
-6. Filtre temizlendiğinde bütün dosyalar yeniden görüntülendi.
-7. Test dosyası arayüz üzerinden başarıyla silindi.
+Gateway loglarında aşağıdaki hata desenleri aranmıştır:
+
+- `[ERR]`
+- `Unhandled exception`
+- `No available destinations`
+- `Failed to proxy`
+
+Beklenmeyen hata kaydı bulunmamıştır.
 
 ## Sonuç
 
-İlgili kayıt ilişkilendirme özelliği domain, persistence, application, API, frontend ve Docker ortamında uçtan uca doğrulanmıştır.
+YARP Gateway; proje, routing, correlation ID, Docker, Compose, Nginx, Vite ve CI seviyelerinde entegre edilmiştir.
+
+Nginx → Gateway → Identity API / File API zinciri authentication, authorization ve gerçek dosya yaşam döngüsü üzerinde uçtan uca doğrulanmıştır.
+
+Branch, dokümantasyon doğrulaması ve son CI kontrollerinden sonra PR açılmaya hazır olacaktır.

@@ -1,6 +1,8 @@
+using FileManagement.Application.Abstractions.Execution;
 using FileManagement.Application.Abstractions.Persistence;
 using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Application.Files.Models;
+using FileManagement.Contracts.Files;
 using FileManagement.Domain.Entities;
 
 namespace FileManagement.Application.Files;
@@ -9,13 +11,22 @@ public sealed class FileManagementService : IFileManagementService
 {
     private readonly IStoredFileRepository _repository;
     private readonly IFileStorageService _storageService;
+    private readonly IFileOperationOutbox _outbox;
+    private readonly IFileOperationContext _operationContext;
+    private readonly TimeProvider _timeProvider;
 
     public FileManagementService(
         IStoredFileRepository repository,
-        IFileStorageService storageService)
+        IFileStorageService storageService,
+        IFileOperationOutbox outbox,
+        IFileOperationContext operationContext,
+        TimeProvider timeProvider)
     {
         _repository = repository;
         _storageService = storageService;
+        _outbox = outbox;
+        _operationContext = operationContext;
+        _timeProvider = timeProvider;
     }
 
     public Task<StoredFileDto> UploadAsync(
@@ -102,6 +113,23 @@ public sealed class FileManagementService : IFileManagementService
                 storedFile,
                 cancellationToken);
 
+            var actorUserId =
+                _operationContext.ActorUserId;
+
+            var correlationId =
+                _operationContext.CorrelationId;
+
+            var occurredAtUtc =
+                _timeProvider.GetUtcNow();
+
+            await _outbox.EnqueueAsync(
+                storedFile,
+                FileOperationKinds.Uploaded,
+                actorUserId,
+                correlationId,
+                occurredAtUtc,
+                cancellationToken);
+
             await _repository.SaveChangesAsync(
                 cancellationToken);
         }
@@ -166,10 +194,35 @@ public sealed class FileManagementService : IFileManagementService
             : Map(storedFile);
     }
 
-    public async Task<StoredFileDto?> DownloadAsync(
+    public Task<StoredFileDto?> DownloadAsync(
         Guid id,
         Stream destination,
         CancellationToken cancellationToken = default)
+    {
+        return StreamAsync(
+            id,
+            destination,
+            recordDownloadOperation: true,
+            cancellationToken: cancellationToken);
+    }
+
+    public Task<StoredFileDto?> PreviewAsync(
+        Guid id,
+        Stream destination,
+        CancellationToken cancellationToken = default)
+    {
+        return StreamAsync(
+            id,
+            destination,
+            recordDownloadOperation: false,
+            cancellationToken: cancellationToken);
+    }
+
+    private async Task<StoredFileDto?> StreamAsync(
+        Guid id,
+        Stream destination,
+        bool recordDownloadOperation,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
 
@@ -193,6 +246,29 @@ public sealed class FileManagementService : IFileManagementService
             storedFile.ObjectName,
             destination,
             cancellationToken);
+
+        if (recordDownloadOperation)
+        {
+            var actorUserId =
+                _operationContext.ActorUserId;
+
+            var correlationId =
+                _operationContext.CorrelationId;
+
+            var occurredAtUtc =
+                _timeProvider.GetUtcNow();
+
+            await _outbox.EnqueueAsync(
+                storedFile,
+                FileOperationKinds.Downloaded,
+                actorUserId,
+                correlationId,
+                occurredAtUtc,
+                cancellationToken);
+
+            await _repository.SaveChangesAsync(
+                cancellationToken);
+        }
 
         return Map(storedFile);
     }
@@ -237,6 +313,23 @@ public sealed class FileManagementService : IFileManagementService
 
         await _storageService.DeleteAsync(
             storedFile.ObjectName,
+            cancellationToken);
+
+        var actorUserId =
+            _operationContext.ActorUserId;
+
+        var correlationId =
+            _operationContext.CorrelationId;
+
+        var occurredAtUtc =
+            _timeProvider.GetUtcNow();
+
+        await _outbox.EnqueueAsync(
+            storedFile,
+            FileOperationKinds.Deleted,
+            actorUserId,
+            correlationId,
+            occurredAtUtc,
             cancellationToken);
 
         _repository.Remove(storedFile);

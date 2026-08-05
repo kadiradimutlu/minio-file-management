@@ -22,6 +22,62 @@ namespace FileManagement.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("FileManagement.Domain.Entities.DailyFileOperationReport", b =>
+                {
+                    b.Property<DateOnly>("ReportDate")
+                        .HasColumnType("date")
+                        .HasColumnName("report_date");
+
+                    b.Property<string>("ContentTypeBreakdownJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("content_type_breakdown");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<int>("DeletedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("deleted_count");
+
+                    b.Property<long>("DownloadedBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("downloaded_bytes");
+
+                    b.Property<int>("DownloadedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("downloaded_count");
+
+                    b.Property<int>("FailedOutboxCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_outbox_count");
+
+                    b.Property<int>("InvalidEventCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("invalid_event_count");
+
+                    b.Property<int>("PendingOutboxCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("pending_outbox_count");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<long>("UploadedBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("uploaded_bytes");
+
+                    b.Property<int>("UploadedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("uploaded_count");
+
+                    b.HasKey("ReportDate");
+
+                    b.ToTable("daily_file_operation_reports", (string)null);
+                });
+
             modelBuilder.Entity("FileManagement.Domain.Entities.StoredFile", b =>
                 {
                     b.Property<Guid>("Id")
@@ -80,6 +136,71 @@ namespace FileManagement.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_stored_files_related_record");
 
                     b.ToTable("stored_files", (string)null);
+                });
+
+            modelBuilder.Entity("FileManagement.Infrastructure.Persistence.Outbox.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("event_type");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTimeOffset?>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_at_utc");
+
+                    b.Property<string>("Producer")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("producer");
+
+                    b.Property<int>("RetryCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("retry_count");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtUtc")
+                        .HasDatabaseName("ix_outbox_messages_pending")
+                        .HasFilter("processed_at_utc IS NULL");
+
+                    b.ToTable("outbox_messages", (string)null);
                 });
 #pragma warning restore 612, 618
         }

@@ -90,6 +90,10 @@ jobs:
         working-directory: src/FileManagement.Web
         run: npm run lint
 
+      - name: Run frontend tests
+        working-directory: src/FileManagement.Web
+        run: npm test
+
       - name: Build frontend
         working-directory: src/FileManagement.Web
         run: npm run build
@@ -119,22 +123,68 @@ jobs:
           config
           --quiet
 
-      - name: List Compose services
+      - name: Verify Compose service inventory
+        run: |
+          services="$(
+            docker compose \
+              --env-file .env.example \
+              config \
+              --services
+          )"
+          printf '%s\n' "$services"
+
+          service_count="$(printf '%s\n' "$services" | wc -l)"
+          test "$service_count" -eq 17
+
+      - name: Pull observability UI images
         run: >
           docker compose
           --env-file .env.example
-          config
-          --services
+          pull
+          kafbat-ui
+          redisinsight
 
-      - name: Build API and Web images
+      - name: Build application images
         run: >
           docker compose
           --env-file .env.example
           build
+          minio
           api
+          identity-api
+          gateway
+          operations-worker
+          outbox-worker
+          reporting-worker
           web
 
       - name: Inspect application images
         run: |
           docker image inspect minio-file-management/api:local
+          docker image inspect minio-file-management/identity-api:local
+          docker image inspect minio-file-management/gateway:local
+          docker image inspect minio-file-management/operations-worker:local
+          docker image inspect minio-file-management/outbox-worker:local
+          docker image inspect minio-file-management/reporting-worker:local
           docker image inspect minio-file-management/web:local
+          minio_version="$(
+            grep '^MINIO_VERSION=' .env.example |
+              cut -d= -f2-
+          )"
+          test -n "$minio_version"
+          docker image inspect \
+            "minio-file-management/minio:${minio_version}"
+          kafbat_ui_version="$(
+            grep '^KAFBAT_UI_VERSION=' .env.example |
+              cut -d= -f2-
+          )"
+          redisinsight_version="$(
+            grep '^REDISINSIGHT_VERSION=' .env.example |
+              cut -d= -f2-
+          )"
+          test -n "$kafbat_ui_version"
+          test -n "$redisinsight_version"
+          docker image inspect \
+            "ghcr.io/kafbat/kafka-ui:${kafbat_ui_version}"
+          docker image inspect \
+            "redis/redisinsight:${redisinsight_version}"

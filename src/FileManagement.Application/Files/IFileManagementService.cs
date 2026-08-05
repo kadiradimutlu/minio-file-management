@@ -37,6 +37,11 @@ public interface IFileManagementService
         Stream destination,
         CancellationToken cancellationToken = default);
 
+    Task<StoredFileDto?> PreviewAsync(
+        Guid id,
+        Stream destination,
+        CancellationToken cancellationToken = default);
+
     Task<FileAccessUrlDto?> CreatePresignedGetUrlAsync(
         Guid id,
         TimeSpan expiresIn,

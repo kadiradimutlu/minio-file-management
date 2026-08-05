@@ -1,87 +1,202 @@
 # Gereksinim–Kanıt Matrisi
 
-Bu belge, dosya yönetim modülü gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
+Bu belge; dosya yönetimi, Redis metadata cache, Identity, JWT, YARP API Gateway, frontend authentication, transactional outbox, Kafka event pipeline, Hangfire reporting ve gözlemlenebilirlik gereksinimlerini repository içindeki uygulama ve doğrulama kanıtlarıyla eşleştirir.
 
 ## Backend ve Depolama
 
 | Gereksinim | Uygulama kanıtı | Doğrulama |
 |---|---|---|
-| Yeniden kullanılabilir storage servisi | `IFileStorageService` ve MinIO implementasyonu | Application birim testleri ve Docker smoke testi |
-| Bucket oluşturma | `EnsureBucketExistsAsync` | API başlangıcında bucket hazırlama ve container testi |
-| Dosya yükleme | `UploadAsync` | Unit test ve gerçek MinIO upload testi |
-| Dosya indirme | `DownloadAsync` | SHA-256 eşitlik testi |
-| Dosya silme | `DeleteAsync` | API `204`, PostgreSQL kayıt sayısı `0`, MinIO erişimi başarısız |
-| Nesne varlık kontrolü | `ExistsAsync` | Storage soyutlaması |
-| Süreli erişim URL'si | `CreatePresignedGetUrlAsync` | Presigned URL üzerinden SHA-256 testi |
-| Metadata PostgreSQL üzerinde saklanmalı | `StoredFile`, `FileManagementDbContext`, repository | PostgreSQL sorgusu ve API detay endpoint'i |
+| Yeniden kullanılabilir storage servisi | `IFileStorageService` ve MinIO implementasyonu | Application birim testleri ve container smoke testi |
+| Bucket oluşturma | `EnsureBucketExistsAsync` | File API başlangıcında bucket hazırlama |
+| Dosya yükleme | `FileManagementService.UploadAsync` | Unit test ve Gateway üzerinden gerçek multipart upload |
+| Dosya indirme | `DownloadAsync` | Gateway JWT download ve SHA-256 eşitlik testi |
+| Dosya silme | `DeleteAsync` | Gateway üzerinden `204`, ardından detail `404` |
+| Süreli erişim URL'si | `CreatePresignedGetUrlAsync` | JWT ve presigned URL doğrulamaları |
+| Metadata PostgreSQL üzerinde saklanmalı | `StoredFile`, `FileManagementDbContext`, repository | Persistence ve API detail testleri |
 | Metadata başarısızlığında MinIO geri alma | `FileManagementService.UploadAsync` rollback akışı | `UploadAsync_WhenDatabaseSaveFails_DeletesObject` |
-| EF Core migration | `Persistence/Migrations` | Pending model change kontrolü |
+| Private object storage | MinIO bucket ve API kontrollü erişim | JWT endpoint ve hash testleri |
 
 ## İlgili Kayıt İlişkilendirmesi
 
 | Gereksinim | Uygulama kanıtı | Doğrulama |
 |---|---|---|
-| Dosya ilgili kayıtla ilişkilendirilebilmeli | `StoredFile.RelatedRecordType`, `StoredFile.RelatedRecordId` | Domain ve application testleri |
-| İki alan birlikte zorunlu olmalı | Domain, application ve API validation | Eksik alanla upload ve listeleme `400` |
-| İlişki alanları normalize edilmeli | Domain ve application trim işlemleri | Unit testlerde boşluklu değerler |
-| İlişki bilgisi DTO'da dönmeli | `StoredFileDto` | Upload, detail ve list API cevapları |
-| İlgili kayda göre filtrelenebilmeli | Repository ve service `ListAsync` | Gerçek PostgreSQL filtreleme smoke testi |
-| Filtre hızlı sorgulanabilmeli | `ix_stored_files_related_record` | `pg_indexes` sorgusu |
-| Eski ilişkisiz kullanım korunmalı | Eski service overload'ları ve nullable kolonlar | İlişkisiz upload birim testi |
+| Dosya başka bir kayıtla ilişkilendirilebilmeli | `RelatedRecordType`, `RelatedRecordId` | Gateway multipart upload |
+| Alanlar birlikte verilmelidir | Domain ve request doğrulamaları | Eksik association birim testi |
+| İlgili kayda göre filtreleme | Repository ve File API query parametreleri | Gateway filtre sonucu `1` |
+| Metadata uzunluk kuralları | Domain sabitleri ve EF configuration | Domain birim testleri |
 
-## API
-
-| Gereksinim | Endpoint veya dosya | Doğrulama |
-|---|---|---|
-| Upload | `POST /api/files` | `201 Created` |
-| Listeleme | `GET /api/files` | `200 OK` |
-| Filtreli listeleme | Query: `relatedRecordType`, `relatedRecordId` | Tek eşleşen kayıt |
-| Metadata detayı | `GET /api/files/{id}` | İlişki alanlarıyla `200 OK` |
-| Download | `GET /api/files/{id}/download` | Kaynakla aynı SHA-256 |
-| Preview | `GET /api/files/{id}/preview` | Kaynakla aynı SHA-256 |
-| Presigned URL | `GET /api/files/{id}/presigned-url` | URL üzerinden başarılı indirme |
-| Delete | `DELETE /api/files/{id}` | `204 No Content` |
-| Validation problemi | ASP.NET Core model validation | Problem Details biçiminde `400` |
-| OpenAPI | `/openapi/v1.json` | `200 OK` ve ilişki alanları mevcut |
-| Swagger UI | `/swagger` | `200 OK` |
-
-## Frontend
+## Redis Metadata Cache
 
 | Gereksinim | Uygulama kanıtı | Doğrulama |
 |---|---|---|
-| Yeniden kullanılabilir drag-drop bileşeni | `FileUploadDropzone.tsx` | Tarayıcı smoke testi |
-| Tekli ve çoklu seçim | Ant Design `Dragger` ve `multiple` | Tarayıcı smoke testi |
-| Boyut ve uzantı doğrulaması | `beforeUpload` | Lint, build ve tarayıcı testi |
-| Yükleme ilerlemesi | Axios `onUploadProgress` | Tarayıcı smoke testi |
-| Başarı ve hata bildirimleri | Ant Design message API | Tarayıcı smoke testi |
-| Dosya listeleme | `FileTable.tsx` | Tarayıcı smoke testi |
-| Download ve preview | Tablo aksiyonları | API ve tarayıcı testi |
-| Silme | `Popconfirm` ve API çağrısı | Tarayıcı smoke testi |
-| İlişki bilgisi girişi | Upload form alanları | Tarayıcı smoke testi |
-| İlişkiye göre filtreleme | `App.tsx` filtre paneli | Tarayıcı smoke testi |
-| İlişki bilgisini tabloda gösterme | İlgili kayıt sütunu | Tarayıcı smoke testi |
-| Responsive görünüm | Ant Design grid ve CSS media query | Production build ve tarayıcı testi |
+| Cache API sözleşmesini değiştirmemeli | `CachedFileManagementService` decorator'ı | Mevcut File API endpoint'leri ve DTO'ları değişmedi |
+| Liste metadata'sı cache'lenmeli | `GetListAsync` / `SetListAsync` ve filtre hash'i | Aynı filtre için beklenen Redis anahtarı runtime'da doğrulandı |
+| Detail metadata'sı cache'lenmeli | `GetFileAsync` / `SetFileAsync` | Upload sonrası detail anahtarı runtime'da bulundu |
+| Dosya içeriği cache'lenmemeli | Download, preview ve presigned URL çağrıları doğrudan ana servise delegate edilir | Decorator birim testleri |
+| Upload cache'i güncellemelidir | Detail warm-up ve liste nesli invalidation | Runtime upload ve düz GUID generation doğrulaması |
+| Delete cache'i temizlemelidir | Detail eviction ve liste nesli invalidation | Runtime delete sonrası anahtar ve generation doğrulaması |
+| Eski liste anahtarları erişilemez olmalıdır | Generation tabanlı liste anahtarı | Invalidation birim testi |
+| Redis kesintisi ana işlemi durdurmamalıdır | Recoverable cache hatalarında fail-open davranışı | Redis durdurularak list/detail/upload/delete doğrulandı |
+| Cache isteğe bağlı olmalıdır | `NullFileMetadataCache` ve `FileCache:Enabled` | Cache kapalı yapılandırma kod doğrulaması |
+| TTL ve timeout değerleri sınırlandırılmalıdır | `FileMetadataCacheOptions` ve `RedisCacheConnectionOptions` validation | Başlangıç validation ve birim testleri |
+| Redis parola korumalı olmalıdır | Compose `requirepass` ve authenticated healthcheck | Authenticated `PONG`, unauthenticated `NOAUTH` |
+| Redis verisi geçici olmalıdır | `--save ""` ve `--appendonly no` | Compose configuration doğrulaması |
+
+## Identity ve JWT
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Ayrı Identity servisi | `FileManagement.Identity.Api` | Ayrı executable, image ve health endpoint'i |
+| Ayrı Identity persistence katmanı | `FileManagement.Identity.Infrastructure` | Solution ve build doğrulaması |
+| Kullanıcı ve rol yönetimi | ASP.NET Core Identity | Admin/User seed ve login cevabı |
+| JWT üretimi | `JwtTokenService` | Identity birim testi ve gerçek login |
+| JWT doğrulaması | File API JWT Bearer yapılandırması | Geçerli token; yanlış issuer/audience/key ve expired token testleri |
+| Controller authorization sınırları | Controller ve action attribute'ları | Auth/File default authorize, login/register anonymous testleri |
+| Role dayalı authorization | Admin endpoint'i | Attribute testi ve `/api/auth/admin/ping` sonucu `200` |
+| Anonim File API erişimi engellenmeli | `[Authorize]` | Gateway üzerinden `401` |
+| OpenAPI Bearer desteği | `BearerSecuritySchemeTransformer` | OpenAPI doğrulaması |
+
+## YARP API Gateway
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Ayrı Gateway executable olmalı | `FileManagement.Gateway` | Solution Release build |
+| Merkezi API giriş noktası | `MapReverseProxy()` | Nginx ve Vite yalnızca Gateway'e yönleniyor |
+| Identity trafiği ayrılmalı | `identityRoute` ve `identityCluster` | Login, me ve admin ping sonuçları `200` |
+| File trafiği ayrılmalı | `fileRoute` ve `fileCluster` | Listeleme, upload, download ve delete testleri |
+| Bilinmeyen route reddedilmeli | Yalnızca tanımlı YARP route'ları | `/api/unknown` sonucu `404` |
+| Request boyutu sınırları | Route bazlı `MaxRequestBodySize` | Gateway configuration birim testleri |
+| Correlation ID girdisi sınırlandırılmalı | `CorrelationIdMiddleware` | Geçerli, geçersiz ve aşırı uzun header testleri |
+| Docker image olmalı | `docker/gateway/Dockerfile` | Image build ve inspect |
+| Compose servisi olmalı | `gateway` servisi | Container `healthy` |
+| Nginx downstream servislere doğrudan gitmemeli | `proxy_pass http://gateway:8080` | Eski API hedeflerinin bulunmadığı doğrulandı |
+| CI Gateway image'ını build etmeli | `.github/workflows/ci.yml` | Gateway build ve inspect adımları |
+
+## Correlation ID ve Gözlemlenebilirlik
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Gateway correlation ID kabul etmeli | `CorrelationIdMiddleware` | İstemci değeri response içinde aynı döndü |
+| Eksik correlation ID üretilmeli | `Guid.NewGuid().ToString("N")` | Middleware kod doğrulaması |
+| Correlation ID downstream'e taşınmalı | `context.Request.Headers[HeaderName]` | Gateway → File API zinciri |
+| Gateway logları merkezi olmalı | Serilog Console ve Seq sink | Gateway startup ve proxy logları |
+| Servis logları ayrıştırılabilmeli | `Application` enrichment | Gateway, Identity, File API, Outbox Worker ve Operations Worker log kimlikleri |
+| Health endpoint'i bulunmalı | `/health` | Gateway health `200` |
+
+## Frontend ve Routing
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Login ekranı | `LoginScreen` | Gerçek admin login |
+| Oturum saklama | `sessionStorage` | Auth session birim testleri ve gerçek login |
+| Bearer interceptor | `httpClient.ts` | Gateway üzerinden korumalı istek |
+| Upload validation | `fileUploadValidation.ts` | Uzantı, MIME type ve boyut testleri |
+| File table davranışı | `FileTable` | Render ve action callback component testleri |
+| Nginx tek API hedefi kullanmalı | `docker/web/nginx.conf` | Bütün `/api/*` trafiği Gateway'e gider |
+| Vite geliştirme proxy'si Gateway'i kullanmalı | `vite.config.ts` | Hedef port `5070` |
+| JWT download ve preview | Axios Blob akışı | Download SHA-256 testi |
+
+## Transactional Outbox ve Kafka
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Versiyonlu event contract'ı | `IntegrationEventEnvelope<T>` ve `FileOperationOccurredV1` | 4 contract testi |
+| Upload event'i üretilmeli | `FileManagementService.UploadAsync` ve `FileOperationOutbox` | Application ve outbox birim testleri |
+| Download event'i üretilmeli | `FileManagementService.DownloadAsync` | Application birim testleri ve runtime Kafka tüketimi |
+| Delete event'i üretilmeli | `FileManagementService.DeleteAsync` | Application birim testleri ve runtime Kafka tüketimi |
+| Preview download sayılmamalı | `PreviewAsync` içinde `recordDownloadOperation: false` | Application birim testi |
+| Presigned URL download sayılmamalı | `CreatePresignedGetUrlAsync` outbox yazmaz | Application birim testi |
+| Metadata ve outbox atomik olmalı | Aynı `FileManagementDbContext` ve `SaveChangesAsync` transaction sınırı | Persistence ve application testleri |
+| Pending outbox mesajları Kafka'ya yayımlanmalı | `FileManagement.Outbox.Worker` | Publisher/cycle testleri ve runtime pending `0` |
+| Kafka topic açıkça hazırlanmalı | `kafka-init` ve `file-operations.v1` | Compose runtime topic describe |
+| Consumer auto commit kullanmamalı | `EnableAutoCommit = false` ve manuel `Commit` | Consumer kod doğrulaması |
+| Eventler Operations Worker tarafından tüketilmeli | `KafkaFileOperationConsumer` ve `LoggingFileOperationEventHandler` | Runtime consumer logları ve lag `0` |
+| Event ve request izlenebilir olmalı | Event ID, file ID, actor user ID ve correlation ID | Contract testleri ve yapılandırılmış loglar |
+
+## Hangfire Reporting
+
+| Gereksinim | Uygulama kanıtı | Doğrulama |
+|---|---|---|
+| Ayrı reporting worker olmalı | `FileManagement.Reporting.Worker` | Solution Release build ve ayrı container image |
+| Job storage kalıcı olmalı | `Hangfire.PostgreSql`, ayrı `hangfire` şeması | Runtime şema ve recurring job kaydı |
+| Günlük upload/download/delete özeti üretilmeli | `DailyFileOperationsReportJob` ve `DailyFileOperationsReportCalculator` | Manuel job ile gerçek rapor satırı |
+| Upload content type ve byte toplamları raporlanmalı | `UploadedContentTypes`, `UploadedBytes`, `DownloadedBytes` | Calculator birim testleri |
+| Outbox tanılama bilgileri raporlanmalı | Pending, failed ve invalid event alanları | Unit test ve runtime rapor sonucu |
+| Rapor üretimi idempotent olmalı | `report_date` doğal primary key ve `Refresh` akışı | Domain testi ve aynı tarih için upsert davranışı |
+| Geçici hatalar retry edilmeli | `AutomaticRetry`, 60/300/900 saniye gecikmeler | Reflection tabanlı job configuration testleri |
+| Aynı job eşzamanlı çalışmamalı | `DisableConcurrentExecution(600)` | Job configuration testleri |
+| Dashboard korunmalı | Ayrı Basic Authentication doğrulaması | Kimliksiz `401`, doğru kimlikle `200` |
+| Dashboard salt okunur olmalı | `DashboardOptions.IsReadOnlyFunc` | Configuration ve runtime dashboard kontrolü |
+| Reporting API korunmalı | `ReportingAdministrator` authorization policy | Kimliksiz `401`, yetkili enqueue `202` |
+| Servis host erişimi sınırlandırılmalı | Compose port binding `127.0.0.1` | Render edilmiş Compose configuration |
 
 ## Altyapı ve Kalite
 
-| Gereksinim | Uygulama kanıtı | Doğrulama |
-|---|---|---|
-| PostgreSQL container | Docker Compose `postgres` servisi | Healthy |
-| MinIO container | Docker Compose `minio` servisi | Healthy |
-| API container | Docker Compose `api` servisi | Healthy |
-| Web container | Docker Compose `web` servisi | Healthy |
-| Nginx reverse proxy | Web container yapılandırması | Web ve `/api` erişimi |
-| Birim testleri | `FileManagement.UnitTests` | 14 test başarılı |
-| Frontend lint | `npm run lint` | 0 uyarı, 0 hata |
-| Frontend production build | `npm run build` | Başarılı |
-| Backend Release build | `dotnet build -c Release` | Başarılı |
-| CI | `.github/workflows/ci.yml` | Backend, Frontend ve Containers işleri |
-
-## Özellik Commit'leri
-
-| Commit | Kapsam |
+| Kontrol | Sonuç |
 |---|---|
-| `70a6768` | Domain modeli, EF yapılandırması, migration ve domain testleri |
-| `3463617` | Application servisi, DTO ve repository filtreleme |
-| `c367f3c` | API modelleri, controller, OpenAPI ve Swagger UI |
-| `bd7eb20` | Frontend upload, filtre ve tablo desteği |
+| Solution Release build | Başarılı |
+| Backend toplam testi | 99 / 99 başarılı |
+| Frontend testi | 11 / 11 başarılı |
+| Genel otomatik test | 110 / 110 başarılı |
+| Contracts testleri | 4 / 4 başarılı |
+| Operations testleri | 3 / 3 başarılı |
+| Outbox testleri | 10 / 10 başarılı |
+| Identity ve authorization testleri | 11 / 11 başarılı |
+| Gateway testleri | 6 / 6 başarılı |
+| Domain, application ve infrastructure testleri | 48 / 48 başarılı |
+| Reporting testleri | 17 / 17 başarılı |
+| NuGet vulnerability audit | Güvenlik açığı bulunmadı |
+| Frontend lint | 0 hata, 0 uyarı |
+| Frontend testleri | 11 / 11 başarılı |
+| Frontend production build | Başarılı |
+| npm vulnerability audit | Açık bulunmadı |
+| MinIO image build | Başarılı |
+| Gateway image build | Başarılı |
+| Operations Worker image build | Başarılı |
+| Outbox Worker image build | Başarılı |
+| Reporting Worker image build | Başarılı |
+| Web image build | Başarılı |
+| Docker Compose servis sayısı | 17 |
+| Uzun yaşayan servis restart politikası | 14 / 14 `unless-stopped` |
+| Tek-seferlik init işleri | 3 / 3 `Exited (0)` |
+| Web, Gateway, File API, Identity API, Reporting, Kafbat UI ve RedisInsight health | 7 / 7 `200` |
+| Gateway container health | `healthy` |
+| Redis container health | `healthy` |
+| Reporting container health | `healthy` |
+| Kafbat UI | `healthy`, login form ve salt okunur Kafka cluster |
+| RedisInsight | `healthy`, önceden tanımlı Redis bağlantısı |
+| Reporting Swagger ve OpenAPI | `200`, Basic security scheme mevcut |
+| Hangfire Dashboard authentication | Kimliksiz `401`, yetkili `200` |
+| Reporting manual enqueue | `202`, rapor satırı üretildi |
+| Redis kesintisinde PostgreSQL fallback | Başarılı |
+| Download hash doğrulaması | SHA-256 eşleşti |
+| Pending outbox mesajı | `0` |
+| Kafka consumer group lag | `0` |
+| İzole final E2E | Başarılı; geçici container, network ve volume'lar temizlendi |
+| Working tree kontrolü | Değişiklikler görsel yönetim arayüzleri milestone kapsamındadır; commit oluşturulmadı |
+
+Vite, ana JavaScript chunk'ı için 500 kB sınır uyarısı vermektedir. Build başarılıdır; code splitting daha sonraki performans iyileştirmesi olarak izlenecektir.
+
+## Gateway Commit Kanıtları
+
+| Commit | Açıklama |
+|---|---|
+| `e43be37` | YARP Gateway proje temeli, route/cluster yapılandırması ve health endpoint'i |
+| `0d514ce` | Gateway tarafından üretilen correlation ID'nin downstream request'e aktarılması |
+| `ccf7828` | Docker, Compose, Nginx, Vite ve CI Gateway entegrasyonu |
+
+## Kafka Operations Commit Kanıtları
+
+| Commit | Açıklama |
+|---|---|
+| `802c83c` | Kafka broker ve topic initialization |
+| `d1ed593` | Versiyonlu file operation contract'ları |
+| `b020a57` | Contract testleri için xUnit namespace düzeltmesi |
+| `9e6e43e` | Operations Kafka consumer temeli |
+| `91306b7` | Operations Worker container entegrasyonu |
+| `78aac1c` | Transactional outbox persistence temeli |
+| `3312daf` | File operation outbox writer |
+| `b86acea` | Upload event enqueue akışı |
+| `940537f` | Outbox eventlerini Kafka'ya yayımlama |
+| `0eea9c5` | Download event üretimi |
+| `ce1e2ae` | Delete event üretimi |

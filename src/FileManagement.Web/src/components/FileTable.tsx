@@ -18,10 +18,6 @@ import {
 import type {
   TableColumnsType,
 } from 'antd'
-import {
-  getDownloadUrl,
-  getPreviewUrl,
-} from '../api/fileApi'
 import type {
   StoredFile,
 } from '../models/file'
@@ -36,6 +32,12 @@ interface FileTableProps {
   ) => Promise<void>
   onDelete: (
     id: string,
+  ) => Promise<void>
+  onDownload: (
+    file: StoredFile,
+  ) => Promise<void>
+  onPreview: (
+    file: StoredFile,
   ) => Promise<void>
 }
 
@@ -80,25 +82,13 @@ function supportsPreview(
   )
 }
 
-function startDownload(
-  url: string,
-): void {
-  const link =
-    document.createElement('a')
-
-  link.href = url
-  link.rel = 'noopener'
-
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-}
-
 export function FileTable({
   files,
   loading,
   onCopyLink,
   onDelete,
+  onDownload,
+  onPreview,
 }: FileTableProps) {
   const columns:
     TableColumnsType<StoredFile> = [
@@ -235,13 +225,7 @@ export function FileTable({
                   <EyeOutlined />
                 }
                 onClick={() => {
-                  window.open(
-                    getPreviewUrl(
-                      file.id,
-                    ),
-                    '_blank',
-                    'noopener,noreferrer',
-                  )
+                  void onPreview(file)
                 }}
               />
             </Tooltip>
@@ -253,11 +237,7 @@ export function FileTable({
                   <DownloadOutlined />
                 }
                 onClick={() => {
-                  startDownload(
-                    getDownloadUrl(
-                      file.id,
-                    ),
-                  )
+                  void onDownload(file)
                 }}
               />
             </Tooltip>

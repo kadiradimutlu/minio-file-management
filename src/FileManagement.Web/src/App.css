@@ -2,6 +2,76 @@
   min-height: 100vh;
 }
 
+.login-layout {
+  position: relative;
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  overflow: hidden;
+  place-items: center;
+  background: #f5f7fa;
+}
+
+.login-background {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      circle at 15% 20%,
+      rgba(22, 119, 255, 0.2),
+      transparent 28rem
+    ),
+    radial-gradient(
+      circle at 90% 80%,
+      rgba(82, 196, 26, 0.14),
+      transparent 24rem
+    );
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: min(430px, 100%);
+  padding: 12px;
+  border:
+    1px solid rgba(229, 231, 235, 0.9);
+  box-shadow:
+    0 24px 80px
+    rgba(15, 23, 42, 0.14);
+}
+
+.login-brand-icon {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  margin-bottom: 20px;
+  place-items: center;
+  color: #ffffff;
+  font-size: 28px;
+  background: #1677ff;
+  border-radius: 18px;
+}
+
+.login-heading {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.login-heading h2,
+.login-heading p {
+  margin: 0;
+}
+
+.login-security-tag {
+  margin-bottom: 24px;
+}
+
+.login-session-note {
+  display: block;
+  margin-top: 18px;
+  text-align: center;
+}
+
 .app-layout {
   min-height: 100vh;
   background:
@@ -28,6 +98,14 @@
 .content-container {
   width: min(1180px, 100%);
   margin: 0 auto;
+}
+
+.header-row {
+  min-height: 52px;
+}
+
+.user-summary {
+  justify-content: flex-end;
 }
 
 .brand-icon {
@@ -114,7 +192,26 @@
   background: transparent;
 }
 
+@media (max-width: 760px) {
+  .header-row {
+    align-items: flex-start;
+  }
+
+  .user-summary {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 640px) {
+  .login-layout {
+    padding: 14px;
+  }
+
+  .login-card {
+    padding: 4px;
+  }
+
   .app-header {
     padding: 14px 16px;
   }

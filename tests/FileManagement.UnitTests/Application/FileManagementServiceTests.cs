@@ -1,6 +1,8 @@
+using FileManagement.Application.Abstractions.Execution;
 using FileManagement.Application.Abstractions.Persistence;
 using FileManagement.Application.Abstractions.Storage;
 using FileManagement.Application.Files;
+using FileManagement.Contracts.Files;
 using FileManagement.Domain.Entities;
 
 namespace FileManagement.UnitTests.Application;
@@ -12,7 +14,7 @@ public sealed class FileManagementServiceTests
     {
         var repository = new FakeStoredFileRepository();
         var storage = new FakeFileStorageService();
-        var service = new FileManagementService(
+        var service = CreateService(
             repository,
             storage);
 
@@ -52,7 +54,7 @@ public sealed class FileManagementServiceTests
     {
         var repository = new FakeStoredFileRepository();
         var storage = new FakeFileStorageService();
-        var service = new FileManagementService(
+        var service = CreateService(
             repository,
             storage);
 
@@ -95,7 +97,7 @@ public sealed class FileManagementServiceTests
     {
         var repository = new FakeStoredFileRepository();
         var storage = new FakeFileStorageService();
-        var service = new FileManagementService(
+        var service = CreateService(
             repository,
             storage);
 
@@ -120,10 +122,116 @@ public sealed class FileManagementServiceTests
     }
 
     [Fact]
+    public async Task UploadAsync_WithValidFile_EnqueuesUploadedOperation()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var bytes =
+            "outbox-upload"u8.ToArray();
+
+        using var stream = new MemoryStream(
+            bytes,
+            writable: false);
+
+        var result = await service.UploadAsync(
+            "report.pdf",
+            "application/pdf",
+            bytes.LongLength,
+            stream);
+
+        var operation = Assert.Single(
+            outbox.Operations);
+
+        Assert.Equal(
+            result.Id,
+            operation.StoredFile.Id);
+
+        Assert.Equal(
+            FileOperationKinds.Uploaded,
+            operation.Operation);
+
+        Assert.Equal(
+            "user-42",
+            operation.ActorUserId);
+
+        Assert.Equal(
+            "correlation-123",
+            operation.CorrelationId);
+
+        Assert.Equal(
+            FakeTimeProvider.FixedUtcNow,
+            operation.OccurredAtUtc);
+
+        Assert.Equal(
+            1,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task UploadAsync_WhenOutboxEnqueueFails_DeletesObject()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox
+            {
+                ThrowOnEnqueue = true
+            };
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var bytes =
+            "outbox-failure"u8.ToArray();
+
+        using var stream = new MemoryStream(
+            bytes,
+            writable: false);
+
+        await Assert.ThrowsAsync<
+            InvalidOperationException>(
+                () => service.UploadAsync(
+                    "report.pdf",
+                    "application/pdf",
+                    bytes.LongLength,
+                    stream));
+
+        Assert.Empty(
+            storage.Objects);
+
+        Assert.Single(
+            storage.DeletedObjectNames);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+    [Fact]
     public async Task ListAsync_WithRelatedRecord_ReturnsMatchingFiles()
     {
         var repository = new FakeStoredFileRepository();
-        var service = new FileManagementService(
+        var service = CreateService(
             repository,
             new FakeFileStorageService());
 
@@ -181,7 +289,7 @@ public sealed class FileManagementServiceTests
         };
 
         var storage = new FakeFileStorageService();
-        var service = new FileManagementService(
+        var service = CreateService(
             repository,
             storage);
 
@@ -203,24 +311,580 @@ public sealed class FileManagementServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_WhenFileDoesNotExist_ReturnsFalse()
+    public async Task DownloadAsync_WithExistingFile_EnqueuesDownloadedOperation()
     {
-        var service = new FileManagementService(
-            new FakeStoredFileRepository(),
-            new FakeFileStorageService());
+        var repository =
+            new FakeStoredFileRepository();
 
-        var deleted = await service.DeleteAsync(
-            Guid.NewGuid());
+        var storage =
+            new FakeFileStorageService();
 
-        Assert.False(deleted);
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var bytes =
+            "download-content"u8.ToArray();
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                bytes);
+
+        using var destination =
+            new MemoryStream();
+
+        var result =
+            await service.DownloadAsync(
+                storedFile.Id,
+                destination);
+
+        Assert.NotNull(
+            result);
+
+        Assert.Equal(
+            storedFile.Id,
+            result.Id);
+
+        Assert.Equal(
+            bytes,
+            destination.ToArray());
+
+        Assert.Equal(
+            1,
+            storage.DownloadCallCount);
+
+        var operation = Assert.Single(
+            outbox.Operations);
+
+        Assert.Equal(
+            storedFile.Id,
+            operation.StoredFile.Id);
+
+        Assert.Equal(
+            FileOperationKinds.Downloaded,
+            operation.Operation);
+
+        Assert.Equal(
+            "user-42",
+            operation.ActorUserId);
+
+        Assert.Equal(
+            "correlation-123",
+            operation.CorrelationId);
+
+        Assert.Equal(
+            FakeTimeProvider.FixedUtcNow,
+            operation.OccurredAtUtc);
+
+        Assert.Equal(
+            1,
+            repository.SaveChangesCallCount);
     }
 
+    [Fact]
+    public async Task DownloadAsync_WhenFileDoesNotExist_HasNoSideEffects()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        using var destination =
+            new MemoryStream();
+
+        var result =
+            await service.DownloadAsync(
+                Guid.NewGuid(),
+                destination);
+
+        Assert.Null(
+            result);
+
+        Assert.Equal(
+            0,
+            destination.Length);
+
+        Assert.Equal(
+            0,
+            storage.DownloadCallCount);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_WhenStorageFails_DoesNotEnqueueOperation()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService
+            {
+                ThrowOnDownload = true
+            };
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                "storage-failure"u8.ToArray());
+
+        using var destination =
+            new MemoryStream();
+
+        await Assert.ThrowsAsync<
+            InvalidOperationException>(
+                () =>
+                    service.DownloadAsync(
+                        storedFile.Id,
+                        destination));
+
+        Assert.Equal(
+            1,
+            storage.DownloadCallCount);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task PreviewAsync_WithExistingFile_DoesNotEnqueueDownloadedOperation()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var bytes =
+            "preview-content"u8.ToArray();
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                bytes);
+
+        using var destination =
+            new MemoryStream();
+
+        var result =
+            await service.PreviewAsync(
+                storedFile.Id,
+                destination);
+
+        Assert.NotNull(
+            result);
+
+        Assert.Equal(
+            storedFile.Id,
+            result.Id);
+
+        Assert.Equal(
+            bytes,
+            destination.ToArray());
+
+        Assert.Equal(
+            1,
+            storage.DownloadCallCount);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+    [Fact]
+    public async Task DeleteAsync_WithExistingFile_EnqueuesDeletedOperation()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                "delete-content"u8.ToArray());
+
+        var deleted =
+            await service.DeleteAsync(
+                storedFile.Id);
+
+        Assert.True(
+            deleted);
+
+        Assert.Empty(
+            repository.StoredFiles);
+
+        Assert.False(
+            storage.Objects.ContainsKey(
+                storedFile.ObjectName));
+
+        Assert.Equal(
+            1,
+            storage.DeleteCallCount);
+
+        Assert.Equal(
+            storedFile.ObjectName,
+            Assert.Single(
+                storage.DeletedObjectNames));
+
+        var operation =
+            Assert.Single(
+                outbox.Operations);
+
+        Assert.Equal(
+            storedFile.Id,
+            operation.StoredFile.Id);
+
+        Assert.Equal(
+            FileOperationKinds.Deleted,
+            operation.Operation);
+
+        Assert.Equal(
+            "user-42",
+            operation.ActorUserId);
+
+        Assert.Equal(
+            "correlation-123",
+            operation.CorrelationId);
+
+        Assert.Equal(
+            FakeTimeProvider.FixedUtcNow,
+            operation.OccurredAtUtc);
+
+        Assert.Equal(
+            1,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenFileDoesNotExist_HasNoSideEffects()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var deleted =
+            await service.DeleteAsync(
+                Guid.NewGuid());
+
+        Assert.False(
+            deleted);
+
+        Assert.Equal(
+            0,
+            storage.DeleteCallCount);
+
+        Assert.Empty(
+            storage.DeletedObjectNames);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenStorageFails_DoesNotEnqueueOrRemove()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService
+            {
+                ThrowOnDelete = true
+            };
+
+        var outbox =
+            new FakeFileOperationOutbox();
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                "storage-delete-failure"u8.ToArray());
+
+        await Assert.ThrowsAsync<
+            InvalidOperationException>(
+                () =>
+                    service.DeleteAsync(
+                        storedFile.Id));
+
+        var remainingFile =
+            Assert.Single(
+                repository.StoredFiles);
+
+        Assert.Equal(
+            storedFile.Id,
+            remainingFile.Id);
+
+        Assert.True(
+            storage.Objects.ContainsKey(
+                storedFile.ObjectName));
+
+        Assert.Equal(
+            1,
+            storage.DeleteCallCount);
+
+        Assert.Empty(
+            storage.DeletedObjectNames);
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenOutboxFails_DoesNotRemoveMetadata()
+    {
+        var repository =
+            new FakeStoredFileRepository();
+
+        var storage =
+            new FakeFileStorageService();
+
+        var outbox =
+            new FakeFileOperationOutbox
+            {
+                ThrowOnEnqueue = true
+            };
+
+        var service = CreateService(
+            repository,
+            storage,
+            outbox);
+
+        var storedFile =
+            AddStoredFile(
+                repository,
+                storage,
+                "outbox-delete-failure"u8.ToArray());
+
+        await Assert.ThrowsAsync<
+            InvalidOperationException>(
+                () =>
+                    service.DeleteAsync(
+                        storedFile.Id));
+
+        var remainingFile =
+            Assert.Single(
+                repository.StoredFiles);
+
+        Assert.Equal(
+            storedFile.Id,
+            remainingFile.Id);
+
+        Assert.False(
+            storage.Objects.ContainsKey(
+                storedFile.ObjectName));
+
+        Assert.Equal(
+            1,
+            storage.DeleteCallCount);
+
+        Assert.Equal(
+            storedFile.ObjectName,
+            Assert.Single(
+                storage.DeletedObjectNames));
+
+        Assert.Empty(
+            outbox.Operations);
+
+        Assert.Equal(
+            0,
+            repository.SaveChangesCallCount);
+    }
+
+    private static StoredFile AddStoredFile(
+        FakeStoredFileRepository repository,
+        FakeFileStorageService storage,
+        byte[] content)
+    {
+        var storedFile =
+            new StoredFile(
+                "report.pdf",
+                "2026/07/report.pdf",
+                "files",
+                "application/pdf",
+                content.LongLength);
+
+        repository.StoredFiles.Add(
+            storedFile);
+
+        storage.Objects[storedFile.ObjectName] =
+            content.ToArray();
+
+        return storedFile;
+    }
+    private static FileManagementService CreateService(
+        FakeStoredFileRepository repository,
+        FakeFileStorageService storage,
+        FakeFileOperationOutbox? outbox = null)
+    {
+        return new FileManagementService(
+            repository,
+            storage,
+            outbox ??
+                new FakeFileOperationOutbox(),
+            new FakeFileOperationContext(),
+            new FakeTimeProvider());
+    }
+
+    private sealed record EnqueuedFileOperation(
+        StoredFile StoredFile,
+        string Operation,
+        string ActorUserId,
+        string CorrelationId,
+        DateTimeOffset OccurredAtUtc);
+
+    private sealed class FakeFileOperationOutbox :
+        IFileOperationOutbox
+    {
+        public List<EnqueuedFileOperation>
+            Operations { get; } = [];
+
+        public bool ThrowOnEnqueue { get; init; }
+
+        public Task EnqueueAsync(
+            StoredFile storedFile,
+            string operation,
+            string actorUserId,
+            string correlationId,
+            DateTimeOffset occurredAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            if (ThrowOnEnqueue)
+            {
+                throw new InvalidOperationException(
+                    "Simulated outbox failure.");
+            }
+
+            Operations.Add(
+                new EnqueuedFileOperation(
+                    storedFile,
+                    operation,
+                    actorUserId,
+                    correlationId,
+                    occurredAtUtc));
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeFileOperationContext :
+        IFileOperationContext
+    {
+        public string ActorUserId =>
+            "user-42";
+
+        public string CorrelationId =>
+            "correlation-123";
+    }
+
+    private sealed class FakeTimeProvider :
+        TimeProvider
+    {
+        public static DateTimeOffset FixedUtcNow { get; } =
+            new(
+                2026,
+                7,
+                30,
+                11,
+                15,
+                0,
+                TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return FixedUtcNow;
+        }
+    }
     private sealed class FakeStoredFileRepository :
         IStoredFileRepository
     {
         public List<StoredFile> StoredFiles { get; } = [];
 
         public bool ThrowOnSave { get; init; }
+
+        public int SaveChangesCallCount
+        {
+            get;
+            private set;
+        }
 
         public Task AddAsync(
             StoredFile storedFile,
@@ -278,6 +942,8 @@ public sealed class FileManagementServiceTests
         public Task SaveChangesAsync(
             CancellationToken cancellationToken = default)
         {
+            SaveChangesCallCount++;
+
             if (ThrowOnSave)
             {
                 throw new InvalidOperationException(
@@ -296,6 +962,22 @@ public sealed class FileManagementServiceTests
         public Dictionary<string, byte[]> Objects { get; } = [];
 
         public List<string> DeletedObjectNames { get; } = [];
+
+        public bool ThrowOnDownload { get; init; }
+
+        public bool ThrowOnDelete { get; init; }
+
+        public int DownloadCallCount
+        {
+            get;
+            private set;
+        }
+
+        public int DeleteCallCount
+        {
+            get;
+            private set;
+        }
 
         public Task EnsureBucketExistsAsync(
             CancellationToken cancellationToken = default)
@@ -325,6 +1007,14 @@ public sealed class FileManagementServiceTests
             Stream destination,
             CancellationToken cancellationToken = default)
         {
+            DownloadCallCount++;
+
+            if (ThrowOnDownload)
+            {
+                throw new InvalidOperationException(
+                    "Simulated storage download failure.");
+            }
+
             await destination.WriteAsync(
                 Objects[objectName],
                 cancellationToken);
@@ -342,8 +1032,19 @@ public sealed class FileManagementServiceTests
             string objectName,
             CancellationToken cancellationToken = default)
         {
-            DeletedObjectNames.Add(objectName);
-            Objects.Remove(objectName);
+            DeleteCallCount++;
+
+            if (ThrowOnDelete)
+            {
+                throw new InvalidOperationException(
+                    "Simulated storage delete failure.");
+            }
+
+            DeletedObjectNames.Add(
+                objectName);
+
+            Objects.Remove(
+                objectName);
 
             return Task.CompletedTask;
         }

@@ -1,36 +1,247 @@
 # MinIO File Management
 
-MinIO Object Storage, PostgreSQL, ASP.NET Core ve React kullanılarak geliştirilmiş yeniden kullanılabilir dosya yönetim modülü.
+MinIO Object Storage, PostgreSQL, Redis, ASP.NET Core Identity, JWT, YARP API Gateway, Kafka, transactional outbox, Hangfire, Seq ve React kullanılarak geliştirilmiş güvenli ve yeniden kullanılabilir dosya yönetim sistemi.
 
-Dosyaların fiziksel içerikleri MinIO üzerinde, dosya metadata bilgileri ise PostgreSQL üzerinde saklanır.
+Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata bilgileri PostgreSQL içindeki `file_management` veritabanında, kullanıcı ve rol bilgileri ise ayrı `identity_management` veritabanında saklanır.
 
 ## Özellikler
+
+### Dosya yönetimi
 
 - Tekli dosya yükleme API'si
 - React arayüzünden çoklu dosya seçimi ve yükleme
 - Sürükle-bırak dosya yükleme
 - Yükleme ilerleme göstergesi
-- Dosya listeleme ve detay görüntüleme
-- Dosya indirme
-- PDF ve görseller için tarayıcı içi önizleme
+- Dosya listeleme ve metadata detayını görüntüleme
+- JWT doğrulamalı dosya indirme
+- PDF ve görseller için JWT doğrulamalı tarayıcı önizlemesi
 - Dosya silme
 - Süreli MinIO erişim bağlantısı oluşturma
 - Dosya boyutu, uzantı ve content type doğrulaması
-- Metadata bilgilerinin PostgreSQL üzerinde saklanması
-- Dosya içeriklerinin private MinIO bucket üzerinde saklanması
-- Metadata kaydı başarısız olursa MinIO nesnesinin geri alınması
+- Metadata kaydı başarısız olursa MinIO nesnesini geri alma
 - İlgili kayıt türü ve kimliğiyle dosya ilişkilendirme
 - İlgili kayda göre dosya filtreleme
-- OpenAPI dokümanı ve interaktif Swagger UI
-- Docker Compose ile dört servisli lokal çalışma ortamı
-- GitHub Actions CI doğrulamaları
+
+### Metadata cache
+
+- Liste ve metadata detail istekleri için Redis tabanlı cache-aside akışı
+- Detail için 5 dakika, liste sonuçları için 30 saniye varsayılan TTL
+- Upload sonrasında detail cache warm-up ve liste cache invalidation
+- Delete sonrasında detail eviction ve liste cache invalidation
+- Redis kesintisinde isteği başarısız kılmadan PostgreSQL'e dönüş
+- Dosya byte'ları, download/preview stream'leri ve presigned URL'ler cache dışında
+- Cache devre dışıyken aynı servis sözleşmesini koruyan no-op implementasyon
+
+### Kimlik ve erişim yönetimi
+
+- Ayrı Identity API ve Identity persistence katmanı
+- ASP.NET Core Identity kullanıcı ve rol yönetimi
+- PostgreSQL üzerinde ayrı Identity veritabanı
+- Parola hashleme ve başarısız giriş kilitleme desteği
+- JWT access token üretimi
+- Issuer, audience, imza ve süre doğrulaması
+- `User` ve `Admin` rolleri
+- Role dayalı admin endpoint'i
+- File API endpoint'lerinin Bearer authentication ile korunması
+- OpenAPI ve Swagger üzerinde Bearer authorization desteği
+- React login ve logout akışı
+- Sekme bazlı `sessionStorage` oturumu
+- Axios Bearer interceptor'ı
+- Token süresi dolduğunda veya `401` alındığında otomatik logout
+
+### Olay işleme
+
+- Upload, download ve delete işlemleri için versiyonlu integration event contract'ları
+- Dosya metadata değişikliğiyle aynı PostgreSQL transaction'ında outbox kaydı
+- Pending outbox mesajlarını Kafka'ya yayımlayan ayrı Outbox Worker
+- Kafka topic'ini hazırlayan tek seferlik init işi
+- Otomatik commit kapalı Operations Kafka consumer
+- Event başarıyla işlendiğinde manuel Kafka offset commit
+- Event ID, file ID, kullanıcı ve correlation ID içeren yapılandırılmış worker logları
+
+### Zamanlanmış raporlama
+
+- PostgreSQL kalıcı storage kullanan ayrı Hangfire Reporting Worker
+- Her gün `01:00 UTC` zamanlanan upload, download ve delete özeti
+- Upload content type dağılımı, byte toplamları ve outbox tanılama sayıları
+- Tarih anahtarlı idempotent rapor tablosu ve manuel yeniden üretim endpoint'i
+- Üç kademeli otomatik retry ve eşzamanlı çalışma koruması
+- Yalnız loopback host portunda yayınlanan, Basic Authentication korumalı salt okunur Hangfire Dashboard
+- Basic Authentication korumalı günlük rapor listeleme ve job enqueue endpoint'leri
+
+### Gözlemlenebilirlik
+
+- Serilog ile yapılandırılmış loglama
+- Console ve merkezi Seq log hedefleri
+- Uygulama ve ortam bilgileriyle zenginleştirilmiş loglar
+- `X-Correlation-ID` request/response desteği
+- HTTP request süreleri ve durum kodları
+- File API loglarında kullanıcı kimliği ve kullanıcı adı
+- Kafka topic, partition, message ve consumer group görünümü için salt okunur Kafbat UI
+- Redis key ve cache içeriği incelemesi için yalnız loopback'te yayınlanan RedisInsight
+- File, Identity ve Reporting API'leri için ayrı interaktif Swagger UI
+- Health endpoint'leri
+
+### Altyapı ve kalite
+
+- OpenAPI 3.1 dokümanları
+- İnteraktif Swagger UI
+- Docker Compose ile lokal çalışma ortamı
+- Nginx reverse proxy
+- GitHub Actions CI
 - xUnit birim testleri
+- NuGet ve npm güvenlik denetimleri
+
+## Mimari
+
+~~~text
+Browser
+   |
+   v
+Web / Nginx :8080
+   |
+   | /api/*
+   v
+YARP Gateway :8080
+   |
+   |-- /api/auth/*  --> Identity API :8080
+   |                     |
+   |                     `--> identity_management
+   |
+   `-- /api/files/* --> File API :8080
+                         |
+                         |--> Redis metadata cache
+                         |--> file_management
+                         `--> MinIO private bucket
+
+File API
+   |
+   `--> PostgreSQL Outbox
+            |
+            v
+       Outbox Worker
+            |
+            v
+          Kafka
+            |
+            v
+     Operations Worker
+
+Gateway -----------\
+Identity API -------+---- Serilog ----> Seq
+File API -----------+
+Outbox Worker ------+
+Operations Worker --/
+Reporting Worker --------------------------/
+~~~
+
+Nginx yalnızca statik React dosyalarını sunar ve bütün `/api/*` isteklerini YARP Gateway'e iletir. Servis seçimi Gateway içindeki route ve cluster yapılandırmasıyla yapılır.
+
+Gateway aşağıdaki route'ları yönetir:
+
+| Gateway route | Cluster | Hedef |
+|---|---|---|
+| `/api/auth/{**catch-all}` | `identityCluster` | Identity API |
+| `/api/files/{**catch-all}` | `fileCluster` | File API |
+
+Gateway authentication işlemini kendisi yapmaz. Bearer token ve diğer request header'larını ilgili downstream servise taşır. Identity API JWT üretir; File API ise JWT'yi yerel olarak doğrular.
+
+`X-Correlation-ID` değeri istemciden geldiyse korunur. Gönderilmediyse Gateway yeni bir correlation ID üretir, downstream request'e ekler ve response header'ında döndürür.
+
+File API ve Identity API host portları lokal tanılama ve Swagger erişimi için açık tutulur. Web uygulamasının normal API trafiği Gateway üzerinden geçer.
+
+Identity API, File API ve Gateway ayrı executable, Docker image, health endpoint'i ve log kimliğine sahiptir.
+
+Her iki veri servisi aynı PostgreSQL container'ını kullanır; ancak ayrı mantıksal veritabanlarına sahiptir:
+
+~~~text
+file_management
+identity_management
+~~~
+
+File API, her dosya isteğinde Identity API'ye çağrı yapmaz. Identity API tarafından imzalanan JWT'yi issuer, audience, süre ve imza bilgileriyle yerel olarak doğrular.
+
+File API metadata liste ve detail okumalarında Redis'i cache-aside katmanı olarak kullanır. Redis kaynak kabul edilmez; cache miss veya Redis bağlantı hatasında PostgreSQL'e dönülür. Dosya içerikleri yalnızca MinIO üzerinden stream edilir.
+
+### Repository yapısı
+
+~~~text
+src/
+├── FileManagement.Api
+├── FileManagement.Application
+├── FileManagement.Contracts
+├── FileManagement.Domain
+├── FileManagement.Infrastructure
+├── FileManagement.Gateway
+├── FileManagement.Identity.Api
+├── FileManagement.Identity.Infrastructure
+├── FileManagement.Operations.Worker
+├── FileManagement.Outbox.Worker
+├── FileManagement.Reporting.Worker
+└── FileManagement.Web
+
+tests/
+├── FileManagement.Contracts.UnitTests
+├── FileManagement.Gateway.UnitTests
+├── FileManagement.Identity.UnitTests
+├── FileManagement.Operations.UnitTests
+├── FileManagement.Outbox.UnitTests
+├── FileManagement.Reporting.UnitTests
+└── FileManagement.UnitTests
+
+docs/
+├── demo-runbook.md
+├── final-project-report.md
+├── hangfire-reporting-verification-report.md
+├── kafka-operations-verification-report.md
+├── redis-cache-verification-report.md
+├── requirements-evidence.md
+└── verification-report.md
+
+scripts/
+└── verify-isolated-e2e.ps1
+~~~
+
+Katmanların sorumlulukları:
+
+- `FileManagement.Domain`: Dosya entity'leri ve domain kuralları
+- `FileManagement.Application`: Dosya servisleri, DTO'lar ve soyutlamalar
+- `FileManagement.Contracts`: Versiyonlu integration event envelope ve dosya operasyon contract'ları
+- `FileManagement.Infrastructure`: PostgreSQL, Entity Framework Core, MinIO ve Redis metadata cache implementasyonları
+- `FileManagement.Gateway`: YARP route/cluster yönetimi, API trafiği ve correlation ID başlangıç noktası
+- `FileManagement.Api`: Korumalı dosya endpoint'leri, JWT doğrulaması, OpenAPI ve Swagger
+- `FileManagement.Identity.Infrastructure`: Identity persistence, kullanıcı/rol yönetimi ve JWT üretimi
+- `FileManagement.Identity.Api`: Register, login, current user ve admin endpoint'leri
+- `FileManagement.Outbox.Worker`: Pending outbox mesajlarını Kafka'ya yayımlayan background worker
+- `FileManagement.Operations.Worker`: Dosya operasyon eventlerini Kafka'dan tüketen background worker
+- `FileManagement.Reporting.Worker`: Hangfire ile günlük dosya operasyon raporlarını üreten, güvenli dashboard ve rapor API'si sunan worker
+- `FileManagement.Web`: React kullanıcı arayüzü, oturum yönetimi ve API istemcileri
+- `FileManagement.Contracts.UnitTests`: Event contract ve JSON uyumluluk testleri
+- `FileManagement.Gateway.UnitTests`: YARP route/cluster ve correlation ID middleware testleri
+- `FileManagement.Identity.UnitTests`: JWT üretim, negatif doğrulama ve authorization boundary testleri
+- `FileManagement.Operations.UnitTests`: Kafka event deserialization testleri
+- `FileManagement.Outbox.UnitTests`: Outbox publish cycle ve publisher testleri
+- `FileManagement.Reporting.UnitTests`: Rapor parser, hesaplama, idempotency, retry ve dashboard kimlik doğrulama testleri
+- `FileManagement.UnitTests`: Domain, application, persistence, cache ve outbox entity testleri
+
+## Authentication Akışı
+
+1. React uygulaması `/api/auth/login` isteğini Nginx üzerinden Gateway'e gönderir.
+2. Gateway isteği `identityCluster` üzerinden Identity API'ye yönlendirir.
+3. Identity API kullanıcı bilgilerini ASP.NET Core Identity üzerinden doğrular.
+4. Başarılı girişte kullanıcı kimliği, e-posta ve rollerini taşıyan JWT üretilir.
+5. React uygulaması token ve kullanıcı bilgilerini `sessionStorage` içinde saklar.
+6. Axios interceptor korumalı isteklere `Authorization: Bearer <token>` header'ını ekler.
+7. Nginx bütün `/api/*` trafiğini Gateway'e iletir.
+8. Gateway `/api/files/*` isteklerini File API'ye yönlendirirken Bearer token'ı korur.
+9. File API token'ın issuer, audience, imza ve süresini doğrular.
+10. Token süresi dolduğunda veya API `401` döndürdüğünde frontend oturumu temizler.
+
+Varsayılan access token süresi ortam değişkeni üzerinden yapılandırılır ve örnek ortamda 60 dakikadır.
 
 ## İlgili Kayıt İlişkilendirmesi
 
 Bir dosya isteğe bağlı olarak başka bir sistem kaydıyla ilişkilendirilebilir.
-
-Kullanılan alanlar:
 
 | Alan | Maksimum uzunluk | Açıklama |
 |---|---:|---|
@@ -43,7 +254,7 @@ Kurallar:
 - İki alan da boş bırakılırsa dosya ilişkisiz yüklenir.
 - Yalnızca bir alan verilirse API `400 Bad Request` döndürür.
 - Listeleme endpoint'i aynı alanlarla filtrelenebilir.
-- PostgreSQL üzerinde iki alanı kapsayan birleşik bir index bulunur.
+- PostgreSQL üzerinde iki alanı kapsayan birleşik index bulunur.
 
 ## Teknolojiler
 
@@ -51,9 +262,15 @@ Kurallar:
 
 - .NET 10
 - ASP.NET Core Web API
+- ASP.NET Core Identity
+- JWT Bearer Authentication
 - Entity Framework Core
 - PostgreSQL
+- Hangfire ve Hangfire.PostgreSql
+- Microsoft distributed cache ve StackExchange.Redis
 - MinIO .NET SDK
+- Serilog
+- Seq
 - OpenAPI
 - Swagger UI
 - xUnit
@@ -68,37 +285,12 @@ Kurallar:
 
 ### Altyapı
 
+- YARP Reverse Proxy
 - Docker
 - Docker Compose
+- Redis 8
 - Nginx
 - GitHub Actions
-
-## Mimari
-
-~~~text
-src/
-├── FileManagement.Api
-├── FileManagement.Application
-├── FileManagement.Domain
-├── FileManagement.Infrastructure
-└── FileManagement.Web
-
-tests/
-└── FileManagement.UnitTests
-
-docs/
-├── requirements-evidence.md
-└── verification-report.md
-~~~
-
-Katmanların sorumlulukları:
-
-- `Domain`: Entity'ler ve domain kuralları
-- `Application`: Servisler, DTO'lar ve soyutlamalar
-- `Infrastructure`: PostgreSQL, Entity Framework Core ve MinIO implementasyonları
-- `Api`: HTTP endpoint'leri, doğrulamalar, OpenAPI ve Swagger
-- `Web`: React ve Ant Design kullanıcı arayüzü
-- `UnitTests`: Domain ve application servis testleri
 
 ## Hızlı Başlangıç
 
@@ -116,7 +308,27 @@ Katmanların sorumlulukları:
 Copy-Item ".env.example" ".env"
 ~~~
 
-`.env` içindeki PostgreSQL ve MinIO parolalarını lokal kullanım için güvenli değerlerle değiştirin.
+`.env` içindeki aşağıdaki değerleri güvenli lokal değerlerle değiştirin:
+
+- `POSTGRES_PASSWORD`
+- `REDIS_PASSWORD`
+- `MINIO_ROOT_PASSWORD`
+- `SEQ_ADMIN_PASSWORD`
+- `JWT_SIGNING_KEY`
+- `IDENTITY_ADMIN_PASSWORD`
+- `REPORTING_DASHBOARD_USERNAME`
+- `REPORTING_DASHBOARD_PASSWORD`
+- `KAFBAT_UI_USERNAME`
+- `KAFBAT_UI_PASSWORD`
+- `REDISINSIGHT_ENCRYPTION_KEY`
+
+`JWT_SIGNING_KEY` en az 32 karakterden oluşan rastgele bir değer olmalıdır.
+
+`REPORTING_DASHBOARD_PASSWORD` en az 16 karakterden oluşan güçlü ve ayrı bir parola olmalıdır.
+
+`KAFBAT_UI_PASSWORD` en az 16 karakterden oluşan güçlü ve ayrı bir
+parola; `REDISINSIGHT_ENCRYPTION_KEY` en az 32 rastgele karakterden
+oluşan bir anahtar olmalıdır.
 
 `.env` dosyası Git tarafından takip edilmez.
 
@@ -136,29 +348,108 @@ Servisleri görüntüleme:
 ~~~powershell
 docker compose `
     --env-file ".env" `
-    ps
+    ps `
+    --all
 ~~~
 
-API başlangıcında:
+Başlangıç sırasında:
 
-- Entity Framework Core migration'ları uygulanır.
+- File API migration'ları uygulanır.
+- Identity migration'ları uygulanır.
+- `User` ve `Admin` rolleri hazırlanır.
+- İlk admin hesabı gerektiğinde oluşturulur.
 - MinIO bucket'ı hazırlanır.
+- Redis parola doğrulamalı ve persistence kapalı metadata cache olarak başlatılır.
+- Identity veritabanı yoksa `identity-db-init` işi tarafından oluşturulur.
+- Kafka data volume izinleri `kafka-data-init` işi tarafından hazırlanır.
+- Kafka broker healthy olduktan sonra `file-operations.v1` topic'i `kafka-init` işi tarafından oluşturulur.
+- Outbox Worker pending mesajları Kafka'ya yayımlamaya başlar.
+- Operations Worker dosya operasyon eventlerini tüketmeye başlar.
+- Reporting Worker uygulama migration'larını doğrular, ayrı `hangfire` şemasını hazırlar ve günlük rapor işini kaydeder.
+
+## Docker Compose Servisleri
+
+| Servis | Sorumluluk |
+|---|---|
+| `postgres` | File ve Identity mantıksal veritabanları |
+| `identity-db-init` | Identity veritabanını hazırlayan tek seferlik init işi |
+| `minio` | Dosya içeriği depolama |
+| `redis` | Liste ve detail metadata cache'i |
+| `redisinsight` | Redis metadata cache'ini görsel olarak inceleyen lokal yönetim arayüzü |
+| `kafka-data-init` | Kafka data volume izinlerini hazırlayan tek seferlik init işi |
+| `kafka` | KRaft modunda dosya operasyon event broker'ı |
+| `kafka-init` | `file-operations.v1` topic'ini hazırlayan tek seferlik init işi |
+| `kafbat-ui` | Kafka topic, partition, message ve consumer group'larını salt okunur gösteren arayüz |
+| `seq` | Merkezi yapılandırılmış loglar |
+| `operations-worker` | Kafka dosya operasyon eventlerini tüketen worker |
+| `outbox-worker` | Transactional outbox mesajlarını Kafka'ya yayımlayan worker |
+| `reporting-worker` | Günlük dosya operasyon raporlarını üreten Hangfire worker ve yönetim endpoint'leri |
+| `identity-api` | Kullanıcı, rol ve JWT işlemleri |
+| `api` | Dosya yönetimi ve JWT doğrulaması |
+| `gateway` | YARP route/cluster yönetimi ve merkezi API giriş noktası |
+| `web` | React uygulaması ve Nginx statik dosya/reverse proxy katmanı |
+
+`identity-db-init`, `kafka-data-init` ve `kafka-init` başarılı çalıştıktan sonra `Exited (0)` durumunda kalması beklenen davranıştır.
 
 ## Lokal Adresler
 
 | Servis | Adres |
 |---|---|
 | Web uygulaması | `http://127.0.0.1:8080` |
-| API health | `http://127.0.0.1:5080/health` |
-| Swagger UI | `http://127.0.0.1:5080/swagger` |
-| OpenAPI JSON | `http://127.0.0.1:5080/openapi/v1.json` |
+| Web health | `http://127.0.0.1:8080/health` |
+| Gateway health | `http://127.0.0.1:5070/health` |
+| Gateway API giriş noktası | `http://127.0.0.1:5070/api` |
+| File API health | `http://127.0.0.1:5080/health` |
+| File API Swagger | `http://127.0.0.1:5080/swagger` |
+| File API OpenAPI | `http://127.0.0.1:5080/openapi/v1.json` |
+| Identity API health | `http://127.0.0.1:5090/health` |
+| Identity API Swagger | `http://127.0.0.1:5090/swagger` |
+| Identity API OpenAPI | `http://127.0.0.1:5090/openapi/v1.json` |
+| Reporting health | `http://127.0.0.1:5100/health` |
+| Reporting Swagger | `http://127.0.0.1:5100/swagger` |
+| Reporting OpenAPI | `http://127.0.0.1:5100/openapi/v1.json` |
+| Hangfire Dashboard | `http://127.0.0.1:5100/hangfire` |
+| Reporting API | `http://127.0.0.1:5100/api/reports/daily` |
+| Seq | `http://127.0.0.1:5341` |
 | MinIO API | `http://127.0.0.1:9000` |
 | MinIO Console | `http://127.0.0.1:9001` |
+| RedisInsight | `http://127.0.0.1:5540` |
+| Kafbat UI | `http://127.0.0.1:8085` |
+| Redis | `127.0.0.1:6379` |
+| Kafka | `127.0.0.1:9092` |
 | PostgreSQL | `127.0.0.1:5432` |
 
-Web container'ındaki Nginx, `/api` isteklerini API container'ına yönlendirir.
+Kafbat UI, RedisInsight, pgAdmin, Swagger, Hangfire, Seq ve MinIO
+Console için bağlantı ve demo adımları
+[Görsel Yönetim Arayüzleri Rehberi](docs/visual-management-guide.md)
+içinde yer alır.
 
-## API Endpoint'leri
+Uygulama yönlendirme zinciri:
+
+~~~text
+Web / Nginx
+   |
+   `-- /api/* --> Gateway
+                    |
+                    |-- /api/auth/*  --> Identity API
+                    `-- /api/files/* --> File API
+~~~
+
+Vite geliştirme sunucusu da `/api/*` isteklerini `http://127.0.0.1:5070` adresindeki Gateway'e gönderir.
+
+## Identity API Endpoint'leri
+
+| Metot | Endpoint | Erişim | Açıklama |
+|---|---|---|---|
+| `POST` | `/api/auth/register` | Anonim | Yeni `User` hesabı oluşturur |
+| `POST` | `/api/auth/login` | Anonim | JWT access token üretir |
+| `GET` | `/api/auth/me` | Bearer | Aktif kullanıcı ve roller |
+| `GET` | `/api/auth/admin/ping` | `Admin` | Role dayalı erişim testi |
+| `GET` | `/health` | Anonim | Identity sağlık kontrolü |
+
+## File API Endpoint'leri
+
+Bütün `/api/files` endpoint'leri geçerli Bearer token gerektirir.
 
 | Metot | Endpoint | Açıklama |
 |---|---|---|
@@ -169,16 +460,61 @@ Web container'ındaki Nginx, `/api` isteklerini API container'ına yönlendirir.
 | `GET` | `/api/files/{id}/preview` | Desteklenen dosyayı önizleme |
 | `GET` | `/api/files/{id}/presigned-url` | Süreli MinIO URL'si oluşturma |
 | `DELETE` | `/api/files/{id}` | Dosyayı ve metadata kaydını silme |
-| `GET` | `/health` | API sağlık kontrolü |
+| `GET` | `/health` | Anonim File API sağlık kontrolü |
+
+## Reporting Endpoint'leri
+
+Reporting host portu yalnızca `127.0.0.1` üzerinde yayınlanır. Dashboard ve rapor endpoint'leri `.env` içindeki ayrı reporting kullanıcı adı/parolasıyla HTTP Basic Authentication gerektirir. Üretimde HTTPS ve secret manager kullanımı zorunlu kabul edilmelidir.
+
+| Metot | Endpoint | Açıklama |
+|---|---|---|
+| `GET` | `/api/reports/daily?limit=30` | En yeni günlük raporları listeler |
+| `POST` | `/api/reports/daily/{yyyy-MM-dd}/enqueue` | İzin verilen tarih aralığı için idempotent rapor job'ı kuyruğa alır |
+| `GET` | `/hangfire` | Salt okunur Hangfire Dashboard |
+| `GET` | `/health` | Anonim Reporting Worker sağlık kontrolü |
+
+Varsayılan günlük job önceki UTC gününü `01:00 UTC` saatinde üretir. Aynı tarih yeniden çalıştırıldığında yeni satır eklemek yerine doğal tarih anahtarlı mevcut rapor güncellenir.
 
 ## API Kullanım Örnekleri
+
+### Admin hesabıyla giriş
+
+~~~powershell
+$loginResponse = Invoke-RestMethod `
+    -Method Post `
+    -Uri "http://127.0.0.1:8080/api/auth/login" `
+    -ContentType "application/json" `
+    -Body (
+        @{
+            email = "admin@filemanagement.local"
+            password = "replace-with-your-local-admin-password"
+        } |
+        ConvertTo-Json
+    )
+
+$accessToken = $loginResponse.accessToken
+
+$headers = @{
+    Authorization = "Bearer $accessToken"
+}
+~~~
+
+### Aktif kullanıcıyı görüntüleme
+
+~~~powershell
+Invoke-RestMethod `
+    -Method Get `
+    -Uri "http://127.0.0.1:8080/api/auth/me" `
+    -Headers $headers
+~~~
 
 ### İlişkisiz dosya yükleme
 
 ~~~powershell
 curl.exe `
     --request POST `
-    "http://127.0.0.1:5080/api/files" `
+    "http://127.0.0.1:8080/api/files" `
+    --header "Authorization: Bearer $accessToken" `
     --form "file=@C:\Temp\report.pdf;type=application/pdf"
 ~~~
 
@@ -187,7 +523,8 @@ curl.exe `
 ~~~powershell
 curl.exe `
     --request POST `
-    "http://127.0.0.1:5080/api/files" `
+    "http://127.0.0.1:8080/api/files" `
+    --header "Authorization: Bearer $accessToken" `
     --form "file=@C:\Temp\report.pdf;type=application/pdf" `
     --form "relatedRecordType=Student" `
     --form "relatedRecordId=42"
@@ -198,7 +535,8 @@ curl.exe `
 ~~~powershell
 Invoke-RestMethod `
     -Method Get `
-    -Uri "http://127.0.0.1:5080/api/files?relatedRecordType=Student&relatedRecordId=42"
+    -Uri "http://127.0.0.1:8080/api/files?relatedRecordType=Student&relatedRecordId=42" `
+    -Headers $headers
 ~~~
 
 ## Varsayılan Dosya Doğrulamaları
@@ -224,7 +562,12 @@ Backend ayrıca izin verilen uzantıları ve content type değerlerini yapıland
 ### Backend
 
 ~~~powershell
-dotnet restore "MinioFileManagement.sln"
+dotnet restore `
+    "MinioFileManagement.sln" `
+    --force-evaluate `
+    -p:NuGetAudit=true `
+    -p:NuGetAuditMode=all `
+    -warnaserror
 
 dotnet build `
     "MinioFileManagement.sln" `
@@ -243,13 +586,15 @@ dotnet test `
 Push-Location "src\FileManagement.Web"
 
 npm ci
+npm test
 npm run lint
 npm run build
+npm audit --audit-level=high
 
 Pop-Location
 ~~~
 
-### EF Core model kontrolü
+### File database EF Core model kontrolü
 
 ~~~powershell
 dotnet ef migrations has-pending-model-changes `
@@ -259,6 +604,17 @@ dotnet ef migrations has-pending-model-changes `
     "src\FileManagement.Api\FileManagement.Api.csproj"
 ~~~
 
+### Identity database EF Core model kontrolü
+
+~~~powershell
+dotnet ef migrations has-pending-model-changes `
+    --project `
+    "src\FileManagement.Identity.Infrastructure\FileManagement.Identity.Infrastructure.csproj" `
+    --startup-project `
+    "src\FileManagement.Identity.Api\FileManagement.Identity.Api.csproj" `
+    --context IdentityDbContext
+~~~
+
 ## CI
 
 GitHub Actions aşağıdaki işleri çalıştırır.
@@ -266,13 +622,14 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 ### Backend
 
 - NuGet restore ve güvenlik denetimi
-- Release build
-- xUnit testleri
+- Bütün solution için Release build
+- File, Identity, Gateway, Contracts, Outbox, Operations ve Reporting birim testleri
 - Zafiyetli NuGet paket raporu
 
 ### Frontend
 
 - `npm ci`
+- Vitest component ve auth testleri
 - Lint
 - Production build
 - Yüksek önem seviyeli npm güvenlik denetimi
@@ -280,8 +637,9 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 ### Containers
 
 - Docker Compose yapılandırma kontrolü
-- Servis listesinin doğrulanması
-- API ve Web image build işlemleri
+- Servis sayısının tam 17 olarak doğrulanması
+- MinIO, File API, Identity API, Gateway, Operations Worker, Outbox Worker, Reporting Worker ve Web image build işlemleri
+- Sabitlenmiş Kafbat UI ve RedisInsight image'larının indirilip doğrulanması
 - Oluşturulan image'ların doğrulanması
 
 ## Servisleri Durdurma
@@ -294,7 +652,7 @@ docker compose `
     down
 ~~~
 
-PostgreSQL ve MinIO volume verilerini de silerek:
+PostgreSQL, MinIO, Kafka ve Seq volume verilerini de silerek:
 
 ~~~powershell
 docker compose `
@@ -303,25 +661,35 @@ docker compose `
     --volumes
 ~~~
 
-`--volumes` seçeneği lokal PostgreSQL ve MinIO verilerini kalıcı olarak siler.
+`--volumes` seçeneği lokal PostgreSQL, MinIO, Kafka ve Seq verilerini kalıcı olarak siler.
+
+Redis metadata cache'i bilerek kalıcı volume kullanmaz; container yeniden oluşturulduğunda cache PostgreSQL'den güvenli biçimde yeniden dolar.
 
 ## Güvenlik ve Üretim Notları
 
-Bu repository bir dosya yönetim modülü ve lokal çalışma örneğidir.
+Mevcut uygulamada JWT authentication, temel role dayalı authorization, parola hashleme, lockout, private MinIO bucket ve merkezi loglama uygulanmıştır.
 
 Üretim ortamından önce ayrıca değerlendirilmesi gereken konular:
 
-- Authentication ve authorization
-- Kullanıcı veya tenant izolasyonu
+- HTTPS zorunluluğu
+- JWT signing key'in secret manager veya key vault içinde tutulması
+- Signing key rotasyonu veya asimetrik imzalama
+- Refresh token ya da BFF/HttpOnly cookie yaklaşımı
+- Public registration politikasının sınırlandırılması
+- E-posta doğrulama ve parola sıfırlama akışları
+- Kullanıcı veya tenant bazlı dosya izolasyonu
 - Zararlı dosya taraması
 - Rate limiting
-- HTTPS ve reverse proxy güvenliği
-- Secret yönetimi
+- CSRF ve XSS risk değerlendirmesi
 - Yedekleme ve geri yükleme
-- Loglama, gözlemlenebilirlik ve alarm mekanizmaları
+- Seq alarm ve retention politikaları
 - MinIO lisans ve destek koşulları
+- Redis TLS, ağ izolasyonu, yönetilen servis ve lisans/destek koşulları
+- Reporting Basic Authentication bilgilerinin secret manager içinde tutulması ve yalnız HTTPS üzerinden kullanılması
+- Hangfire Dashboard host erişiminin ağ politikasıyla sınırlandırılması
+- Hangfire ve Hangfire.PostgreSql lisans/destek koşullarının üretim kullanımı öncesi değerlendirilmesi
 
-MinIO Community image'ı sabitlenmiş kaynak kod tag'inden oluşturulur:
+MinIO Community binary'si sabitlenmiş kaynak kod tag'inden oluşturulur:
 
 ~~~text
 RELEASE.2025-10-15T17-29-55Z
@@ -329,5 +697,11 @@ RELEASE.2025-10-15T17-29-55Z
 
 ## Kanıt ve Doğrulama
 
+- [Görsel yönetim arayüzleri rehberi](docs/visual-management-guide.md)
+- [Final proje raporu](docs/final-project-report.md)
+- [Demo ve operasyon runbook'u](docs/demo-runbook.md)
 - [Gereksinim–kanıt matrisi](docs/requirements-evidence.md)
-- [Doğrulama raporu](docs/verification-report.md)
+- [Hangfire reporting doğrulama raporu](docs/hangfire-reporting-verification-report.md)
+- [Redis metadata cache doğrulama raporu](docs/redis-cache-verification-report.md)
+- [Kafka operations doğrulama raporu](docs/kafka-operations-verification-report.md)
+- [YARP Gateway doğrulama raporu](docs/verification-report.md)

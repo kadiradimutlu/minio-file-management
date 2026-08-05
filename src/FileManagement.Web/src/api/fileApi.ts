@@ -1,18 +1,14 @@
-import axios from 'axios'
-import type { AxiosProgressEvent } from 'axios'
+import type {
+  AxiosProgressEvent,
+} from 'axios'
+import {
+  apiClient,
+} from './httpClient'
 import type {
   FileAccessUrl,
   RelatedRecordAssociation,
   StoredFile,
 } from '../models/file'
-
-const apiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL ?? '/api'
-
-const apiClient = axios.create({
-  baseURL: apiBaseUrl,
-  timeout: 30_000,
-})
 
 export async function listFiles(
   association?: RelatedRecordAssociation,
@@ -65,7 +61,8 @@ export async function uploadFile(
           }
 
           const percent = Math.round(
-            (event.loaded * 100) / event.total,
+            (event.loaded * 100) /
+              event.total,
           )
 
           onProgress?.(percent)
@@ -100,29 +97,34 @@ export async function createPresignedUrl(
   return response.data
 }
 
-function createFileUrl(
+async function getFileContent(
   id: string,
   operation: 'download' | 'preview',
-): string {
-  const normalizedBaseUrl =
-    apiBaseUrl.replace(/\/$/, '')
+): Promise<Blob> {
+  const response =
+    await apiClient.get<Blob>(
+      `/files/${id}/${operation}`,
+      {
+        responseType: 'blob',
+      },
+    )
 
-  return `${normalizedBaseUrl}/files/${id}/${operation}`
+  return response.data
 }
 
-export function getDownloadUrl(
+export async function downloadFile(
   id: string,
-): string {
-  return createFileUrl(
+): Promise<Blob> {
+  return getFileContent(
     id,
     'download',
   )
 }
 
-export function getPreviewUrl(
+export async function previewFile(
   id: string,
-): string {
-  return createFileUrl(
+): Promise<Blob> {
+  return getFileContent(
     id,
     'preview',
   )

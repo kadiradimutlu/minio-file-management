@@ -3,6 +3,7 @@ name: minio-file-management
 services:
   postgres:
     image: postgres:18.4-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
       POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
@@ -25,6 +26,46 @@ services:
     networks:
       - file-management-network
 
+  identity-db-init:
+    image: postgres:18.4-alpine
+    environment:
+      PGPASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
+      IDENTITY_POSTGRES_DB: "${IDENTITY_POSTGRES_DB:-identity_management}"
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -eu
+
+        until pg_isready \
+          -h postgres \
+          -U "$$POSTGRES_USER" \
+          -d postgres
+        do
+          sleep 1
+        done
+
+        database_exists="$$(psql \
+          -h postgres \
+          -U "$$POSTGRES_USER" \
+          -d postgres \
+          -tAc "SELECT 1 FROM pg_database WHERE datname = '$$IDENTITY_POSTGRES_DB'")"
+
+        if [ "$$database_exists" != "1" ]; then
+          createdb \
+            -h postgres \
+            -U "$$POSTGRES_USER" \
+            "$$IDENTITY_POSTGRES_DB"
+        fi
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - file-management-network
+
   minio:
     build:
       context: .
@@ -32,6 +73,7 @@ services:
       args:
         MINIO_VERSION: "${MINIO_VERSION:?MINIO_VERSION is required}"
     image: "minio-file-management/minio:${MINIO_VERSION}"
+    restart: unless-stopped
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}"
@@ -58,15 +100,354 @@ services:
     networks:
       - file-management-network
 
+  redis:
+    image: "redis:${REDIS_VERSION:-8.8.1-alpine}"
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        exec redis-server \
+          --save "" \
+          --appendonly no \
+          --requirepass "$$REDIS_PASSWORD"
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    mem_limit: 128m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - file-management-network
+
+  redisinsight:
+    image: "redis/redisinsight:${REDISINSIGHT_VERSION:-3.8.0}"
+    restart: unless-stopped
+    environment:
+      RI_APP_HOST: "0.0.0.0"
+      RI_APP_PORT: "5540"
+      RI_ACCEPT_TERMS_AND_CONDITIONS: "true"
+      RI_DATABASE_MANAGEMENT: "false"
+      RI_ENCRYPTION_KEY: "${REDISINSIGHT_ENCRYPTION_KEY:?REDISINSIGHT_ENCRYPTION_KEY is required}"
+      RI_REDIS_HOST: "redis"
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: "File Management Cache"
+      RI_REDIS_USERNAME: "default"
+      RI_REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      RI_REDIS_TLS: "false"
+    ports:
+      - "127.0.0.1:${REDISINSIGHT_PORT:-5540}:5540"
+    volumes:
+      - redisinsight-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --tries=1 --spider http://127.0.0.1:5540/api/health/ || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - file-management-network
+
+  kafka-data-init:
+    image: "apache/kafka:${KAFKA_VERSION:-4.3.1}"
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -eu
+
+        mkdir -p /tmp/kraft-combined-logs
+        chown -R 1000:1000 /tmp/kraft-combined-logs
+        chmod 700 /tmp/kraft-combined-logs
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+    restart: "no"
+
+  kafka:
+    image: "apache/kafka:${KAFKA_VERSION:-4.3.1}"
+    restart: unless-stopped
+    hostname: kafka
+    depends_on:
+      kafka-data-init:
+        condition: service_completed_successfully
+    environment:
+      CLUSTER_ID: "${KAFKA_CLUSTER_ID:-4L6g3nShT-eMCtK--X86sw}"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "EXTERNAL://127.0.0.1:${KAFKA_PORT:-9092},INTERNAL://kafka:19092"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,EXTERNAL://:9092,INTERNAL://:19092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+    ports:
+      - "127.0.0.1:${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+    mem_limit: 1g
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 > /dev/null 2>&1 || exit 1"
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    networks:
+      - file-management-network
+
+  kafka-init:
+    image: "apache/kafka:${KAFKA_VERSION:-4.3.1}"
+    environment:
+      KAFKA_FILE_OPERATIONS_TOPIC: "${KAFKA_FILE_OPERATIONS_TOPIC:-file-operations.v1}"
+      KAFKA_FILE_OPERATIONS_PARTITIONS: "${KAFKA_FILE_OPERATIONS_PARTITIONS:-3}"
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -eu
+
+        /opt/kafka/bin/kafka-topics.sh \
+          --bootstrap-server kafka:19092 \
+          --create \
+          --if-not-exists \
+          --topic "$$KAFKA_FILE_OPERATIONS_TOPIC" \
+          --partitions "$$KAFKA_FILE_OPERATIONS_PARTITIONS" \
+          --replication-factor 1
+
+        /opt/kafka/bin/kafka-topics.sh \
+          --bootstrap-server kafka:19092 \
+          --describe \
+          --topic "$$KAFKA_FILE_OPERATIONS_TOPIC"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - file-management-network
+
+  kafbat-ui:
+    image: "ghcr.io/kafbat/kafka-ui:${KAFBAT_UI_VERSION:-v1.5.0}"
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "MinIO File Management"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:19092"
+      KAFKA_CLUSTERS_0_READONLY: "true"
+      DYNAMIC_CONFIG_ENABLED: "false"
+      AUTH_TYPE: "LOGIN_FORM"
+      SPRING_SECURITY_USER_NAME: "${KAFBAT_UI_USERNAME:?KAFBAT_UI_USERNAME is required}"
+      SPRING_SECURITY_USER_PASSWORD: "${KAFBAT_UI_PASSWORD:?KAFBAT_UI_PASSWORD is required}"
+    ports:
+      - "127.0.0.1:${KAFBAT_UI_PORT:-8085}:8080"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    mem_limit: 512m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --tries=1 --spider http://127.0.0.1:8080/actuator/health || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      - file-management-network
+
+  seq:
+    image: "datalust/seq:${SEQ_VERSION:-2026.1}"
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINUSERNAME: "admin"
+      SEQ_FIRSTRUN_ADMINPASSWORD: "${SEQ_ADMIN_PASSWORD:?SEQ_ADMIN_PASSWORD is required}"
+    ports:
+      - "127.0.0.1:${SEQ_PORT:-5341}:80"
+    volumes:
+      - seq-data:/data
+    mem_limit: 512m
+    networks:
+      - file-management-network
+
+  operations-worker:
+    build:
+      context: .
+      dockerfile: docker/operations-worker/Dockerfile
+    image: minio-file-management/operations-worker:local
+    restart: unless-stopped
+    environment:
+      DOTNET_ENVIRONMENT: "Production"
+      Kafka__BootstrapServers: "kafka:19092"
+      Kafka__Topic: "${KAFKA_FILE_OPERATIONS_TOPIC:-file-operations.v1}"
+      Kafka__GroupId: "operations-worker-v1"
+      Kafka__ClientId: "operations-worker"
+      Seq__ServerUrl: "http://seq:80"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      seq:
+        condition: service_started
+    mem_limit: 256m
+    networks:
+      - file-management-network
+
+  outbox-worker:
+    build:
+      context: .
+      dockerfile: docker/outbox-worker/Dockerfile
+    image: minio-file-management/outbox-worker:local
+    restart: unless-stopped
+    environment:
+      DOTNET_ENVIRONMENT: "Production"
+      ConnectionStrings__PostgreSql: "Host=postgres;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Kafka__BootstrapServers: "kafka:19092"
+      Kafka__Topic: "${KAFKA_FILE_OPERATIONS_TOPIC:-file-operations.v1}"
+      Kafka__ClientId: "outbox-worker"
+      OutboxPublisher__BatchSize: "50"
+      OutboxPublisher__PollIntervalMilliseconds: "1000"
+      Seq__ServerUrl: "http://seq:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      seq:
+        condition: service_started
+    mem_limit: 256m
+    networks:
+      - file-management-network
+
+  reporting-worker:
+    build:
+      context: .
+      dockerfile: docker/reporting-worker/Dockerfile
+    image: minio-file-management/reporting-worker:local
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__PostgreSql: "Host=postgres;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Reporting__DailyReportCron: "0 1 * * *"
+      Reporting__WorkerCount: "2"
+      Reporting__MaxManualLookbackDays: "3650"
+      Reporting__MaxResultCount: "100"
+      Dashboard__Username: "${REPORTING_DASHBOARD_USERNAME:?REPORTING_DASHBOARD_USERNAME is required}"
+      Dashboard__Password: "${REPORTING_DASHBOARD_PASSWORD:?REPORTING_DASHBOARD_PASSWORD is required}"
+      Seq__ServerUrl: "http://seq:80"
+    ports:
+      - "127.0.0.1:${REPORTING_PORT:-5100}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    mem_limit: 256m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --silent http://127.0.0.1:8080/health > /dev/null || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - file-management-network
+
+  identity-api:
+    build:
+      context: .
+      dockerfile: docker/identity-api/Dockerfile
+    image: minio-file-management/identity-api:local
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__IdentityPostgreSql: "Host=postgres;Port=5432;Database=${IDENTITY_POSTGRES_DB:-identity_management};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Jwt__Issuer: "${JWT_ISSUER:-file-management-identity}"
+      Jwt__Audience: "${JWT_AUDIENCE:-file-management-services}"
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY is required}"
+      Jwt__ExpirationMinutes: "${JWT_EXPIRATION_MINUTES:-60}"
+      IdentityAdmin__Email: "${IDENTITY_ADMIN_EMAIL:?IDENTITY_ADMIN_EMAIL is required}"
+      IdentityAdmin__Password: "${IDENTITY_ADMIN_PASSWORD:?IDENTITY_ADMIN_PASSWORD is required}"
+      Seq__ServerUrl: "http://seq:80"
+      Cors__AllowedOrigins__0: "http://127.0.0.1:${WEB_PORT:-8080}"
+      Cors__AllowedOrigins__1: "http://localhost:${WEB_PORT:-8080}"
+    ports:
+      - "127.0.0.1:${IDENTITY_API_PORT:-5090}:8080"
+    depends_on:
+      identity-db-init:
+        condition: service_completed_successfully
+      seq:
+        condition: service_started
+    mem_limit: 256m
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --silent http://127.0.0.1:8080/health > /dev/null || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - file-management-network
+
   api:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
     image: minio-file-management/api:local
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: "Production"
       ASPNETCORE_HTTP_PORTS: "8080"
       ConnectionStrings__PostgreSql: "Host=postgres;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      Redis__Host: "redis"
+      Redis__Port: "6379"
+      Redis__Password: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+      Redis__UseSsl: "false"
+      Redis__ConnectTimeoutMilliseconds: "1000"
+      Redis__OperationTimeoutMilliseconds: "500"
+      FileCache__Enabled: "true"
+      FileCache__KeyPrefix: "file-management:production:files:v1"
+      FileCache__DetailTtlSeconds: "300"
+      FileCache__ListTtlSeconds: "30"
       Minio__Endpoint: "minio:9000"
       Minio__PublicEndpoint: "127.0.0.1:${MINIO_API_PORT:-9000}"
       Minio__AccessKey: "${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}"
@@ -74,6 +455,10 @@ services:
       Minio__BucketName: "${MINIO_BUCKET_NAME:-files}"
       Minio__UseSsl: "false"
       Minio__PublicUseSsl: "false"
+      Jwt__Issuer: "${JWT_ISSUER:-file-management-identity}"
+      Jwt__Audience: "${JWT_AUDIENCE:-file-management-services}"
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:?JWT_SIGNING_KEY is required}"
+      Seq__ServerUrl: "http://seq:80"
       Cors__AllowedOrigins__0: "http://127.0.0.1:${WEB_PORT:-8080}"
       Cors__AllowedOrigins__1: "http://localhost:${WEB_PORT:-8080}"
     ports:
@@ -83,6 +468,41 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      seq:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --silent http://127.0.0.1:8080/health > /dev/null || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - file-management-network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway/Dockerfile
+    image: minio-file-management/gateway:local
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      Seq__ServerUrl: "http://seq:80"
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-5070}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      identity-api:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    mem_limit: 256m
     healthcheck:
       test:
         [
@@ -103,10 +523,11 @@ services:
       args:
         VITE_API_BASE_URL: "/api"
     image: minio-file-management/web:local
+    restart: unless-stopped
     ports:
       - "127.0.0.1:${WEB_PORT:-8080}:80"
     depends_on:
-      api:
+      gateway:
         condition: service_healthy
     healthcheck:
       test:
@@ -124,6 +545,9 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  kafka-data:
+  seq-data:
+  redisinsight-data:
 
 networks:
   file-management-network:

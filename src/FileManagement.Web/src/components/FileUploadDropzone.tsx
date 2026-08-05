@@ -14,38 +14,16 @@ import { uploadFile } from '../api/fileApi'
 import type {
   RelatedRecordAssociation,
 } from '../models/file'
+import {
+  allowedExtensions,
+  validateUploadFile,
+} from './fileUploadValidation'
 
 const { Dragger } = Upload
 const { Paragraph, Text } = Typography
 
-const maximumFileSizeBytes =
-  20 * 1024 * 1024
-
-const allowedExtensions = [
-  '.pdf',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.txt',
-  '.docx',
-  '.xlsx',
-]
-
 interface FileUploadDropzoneProps {
   onUploaded: () => Promise<void> | void
-}
-
-function getExtension(
-  fileName: string,
-): string {
-  const separatorIndex =
-    fileName.lastIndexOf('.')
-
-  return separatorIndex < 0
-    ? ''
-    : fileName
-        .slice(separatorIndex)
-        .toLowerCase()
 }
 
 export function FileUploadDropzone({
@@ -120,27 +98,12 @@ export function FileUploadDropzone({
         return Upload.LIST_IGNORE
       }
 
-      if (
-        file.size >
-        maximumFileSizeBytes
-      ) {
+      const validation =
+        validateUploadFile(file)
+
+      if (!validation.valid) {
         void message.error(
-          `${file.name} 20 MB sınırını aşıyor.`,
-        )
-
-        return Upload.LIST_IGNORE
-      }
-
-      const extension =
-        getExtension(file.name)
-
-      if (
-        !allowedExtensions.includes(
-          extension,
-        )
-      ) {
-        void message.error(
-          `${file.name} desteklenen bir uzantıya sahip değil.`,
+          validation.errorMessage,
         )
 
         return Upload.LIST_IGNORE

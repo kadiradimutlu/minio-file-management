@@ -9,6 +9,9 @@ WORKDIR /src
 COPY src/FileManagement.Domain/FileManagement.Domain.csproj \
     src/FileManagement.Domain/
 
+COPY src/FileManagement.Contracts/FileManagement.Contracts.csproj \
+    src/FileManagement.Contracts/
+
 COPY src/FileManagement.Application/FileManagement.Application.csproj \
     src/FileManagement.Application/
 
