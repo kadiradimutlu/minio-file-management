@@ -7,10 +7,11 @@ cache, kimlik yönetimi, API Gateway, güvenilir event pipeline,
 zamanlanmış raporlama ve merkezi gözlemlenebilirliği tek bir
 mini-microservice çözümünde birleştirir.
 
-Final doğrulama 4 Ağustos 2026 tarihinde
-`feature/project-finalization` branch'inde, `develop` branch'indeki
-`570730982e21a6c68afaea0584d649dc0e0de4ab` tabanı üzerinde
-yapılmıştır. Bu rapor hazırlanırken commit, push veya merge
+Temel final doğrulaması 4 Ağustos 2026 tarihinde tamamlanmıştır.
+Görsel yönetim arayüzleri genişletmesi 5 Ağustos 2026 tarihinde
+`feature/observability-uis` branch'inde, `develop` branch'indeki
+`f6f90318908d8b8471d6866dd4db3a7d5f2c323a` tabanı üzerinde
+doğrulanmıştır. Bu rapor güncellenirken commit, push veya merge
 yapılmamıştır.
 
 ## Final Durum Matrisi
@@ -24,8 +25,9 @@ yapılmamıştır.
 | Kafka operations pipeline | Tamamlandı | Transactional outbox, producer, consumer, üç operasyon ve lag `0` |
 | Identity ve JWT | Tamamlandı | Login/me/admin runtime; issuer/audience/key/expiry negatif testleri |
 | YARP API Gateway | Tamamlandı | Route/cluster/body limit ve correlation ID otomatik testleri |
-| Docker Compose ve CI | Tamamlandı | 15 servis, restart politikaları, eksiksiz image build ve üç CI job |
+| Docker Compose ve CI | Tamamlandı | 17 servis, restart politikaları, eksiksiz image build ve üç CI job |
 | Mini-microservice finalizasyonu | Tamamlandı | İzole temiz E2E, tekrar üretilebilir betik, runbook ve final rapor |
+| Görsel yönetim arayüzleri | Tamamlandı | Kafbat UI, RedisInsight, Reporting Swagger ve pgAdmin rehberi |
 
 RabbitMQ proje yol haritasında bilinçli olarak kapsam dışı
 bırakılmıştır. Asenkron operasyon gereksinimi Kafka ile
@@ -46,8 +48,11 @@ flowchart LR
     A --> O["Transactional outbox"]
     O --> W["Outbox Worker"]
     W --> K["Kafka file-operations.v1"]
+    K --> KU["Kafbat UI (read-only)"]
     K --> C["Operations Worker"]
+    R --> RI["RedisInsight"]
     P --> H["Hangfire Reporting Worker"]
+    P --> PG["pgAdmin"]
     A --> S["Seq"]
     I --> S
     G --> S
@@ -103,10 +108,13 @@ kullanmadan, ayrı Compose proje adı ve ayrı volume'larla
 
 | Kontrol | Sonuç |
 |---|---:|
-| Compose service inventory | 15 |
-| Çalışan uzun yaşayan servis | 12 |
+| Compose service inventory | 17 |
+| Çalışan uzun yaşayan servis | 14 |
 | Başarılı tek-seferlik init işi | 3 |
-| Uygulama health endpoint'i | 5 / 5 |
+| Uygulama ve yönetim health endpoint'i | 7 / 7 |
+| Reporting Swagger ve OpenAPI | 200; Basic security scheme mevcut |
+| Kafbat UI | healthy; login form; Kafka erişimi salt okunur |
+| RedisInsight | healthy; Redis bağlantısı önceden tanımlı |
 | Anonymous file erişimi | 401 |
 | Hatalı login | 401 |
 | Admin JWT login/me/ping | Başarılı |
@@ -136,13 +144,17 @@ korunmuştur.
 - Hangfire dashboard ile reporting API ayrı Basic Authentication
   kimlik bilgileriyle korunur ve host portu yalnız loopback'e
   bağlanır.
+- Kafbat UI kullanıcı girişiyle korunur, salt okunur modda çalışır
+  ve yalnız loopback'e bağlanır.
+- RedisInsight yalnız loopback'e bağlanır; bağlantı yönetimi
+  kapalıdır ve lokal tanılama amacı taşır.
 - Secret değerleri source control'e yazılmaz; `.env.example`
   placeholder içerir.
 - .NET application container'ları non-root kullanıcıyla çalışır.
 
 ## Dayanıklılık ve Operasyon
 
-- Uzun yaşayan 12 serviste `restart: unless-stopped` bulunur.
+- Uzun yaşayan 14 serviste `restart: unless-stopped` bulunur.
 - Üç init job `restart: "no"` ile deterministik tek-seferlik işlerdir.
 - API Redis hatasında fail-open davranıp PostgreSQL'e döner.
 - Outbox publisher retry bilgilerini persistence üzerinde tutar.
@@ -158,8 +170,8 @@ GitHub Actions üç bağımsız job çalıştırır:
 1. Backend restore/audit, Release build, 99 test ve vulnerability
    raporu.
 2. Frontend install, 11 test, lint, production build ve npm audit.
-3. Compose configuration, tam 15 servis envanteri, sekiz özel image
-   build ve image inspection.
+3. Compose configuration, tam 17 servis envanteri, sekiz özel image
+   build, Kafbat UI ve RedisInsight image inspection.
 
 `develop` branch'i değişikliklerin pull request üzerinden gelmesini
 ve üç zorunlu kontrolün geçmesini gerektirir. Finalizasyon branch'i

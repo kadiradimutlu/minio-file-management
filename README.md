@@ -77,6 +77,9 @@ Dosyaların fiziksel içerikleri private MinIO bucket üzerinde, dosya metadata 
 - `X-Correlation-ID` request/response desteği
 - HTTP request süreleri ve durum kodları
 - File API loglarında kullanıcı kimliği ve kullanıcı adı
+- Kafka topic, partition, message ve consumer group görünümü için salt okunur Kafbat UI
+- Redis key ve cache içeriği incelemesi için yalnız loopback'te yayınlanan RedisInsight
+- File, Identity ve Reporting API'leri için ayrı interaktif Swagger UI
 - Health endpoint'leri
 
 ### Altyapı ve kalite
@@ -315,10 +318,17 @@ Copy-Item ".env.example" ".env"
 - `IDENTITY_ADMIN_PASSWORD`
 - `REPORTING_DASHBOARD_USERNAME`
 - `REPORTING_DASHBOARD_PASSWORD`
+- `KAFBAT_UI_USERNAME`
+- `KAFBAT_UI_PASSWORD`
+- `REDISINSIGHT_ENCRYPTION_KEY`
 
 `JWT_SIGNING_KEY` en az 32 karakterden oluşan rastgele bir değer olmalıdır.
 
 `REPORTING_DASHBOARD_PASSWORD` en az 16 karakterden oluşan güçlü ve ayrı bir parola olmalıdır.
+
+`KAFBAT_UI_PASSWORD` en az 16 karakterden oluşan güçlü ve ayrı bir
+parola; `REDISINSIGHT_ENCRYPTION_KEY` en az 32 rastgele karakterden
+oluşan bir anahtar olmalıdır.
 
 `.env` dosyası Git tarafından takip edilmez.
 
@@ -365,9 +375,11 @@ Başlangıç sırasında:
 | `identity-db-init` | Identity veritabanını hazırlayan tek seferlik init işi |
 | `minio` | Dosya içeriği depolama |
 | `redis` | Liste ve detail metadata cache'i |
+| `redisinsight` | Redis metadata cache'ini görsel olarak inceleyen lokal yönetim arayüzü |
 | `kafka-data-init` | Kafka data volume izinlerini hazırlayan tek seferlik init işi |
 | `kafka` | KRaft modunda dosya operasyon event broker'ı |
 | `kafka-init` | `file-operations.v1` topic'ini hazırlayan tek seferlik init işi |
+| `kafbat-ui` | Kafka topic, partition, message ve consumer group'larını salt okunur gösteren arayüz |
 | `seq` | Merkezi yapılandırılmış loglar |
 | `operations-worker` | Kafka dosya operasyon eventlerini tüketen worker |
 | `outbox-worker` | Transactional outbox mesajlarını Kafka'ya yayımlayan worker |
@@ -394,14 +406,23 @@ Başlangıç sırasında:
 | Identity API Swagger | `http://127.0.0.1:5090/swagger` |
 | Identity API OpenAPI | `http://127.0.0.1:5090/openapi/v1.json` |
 | Reporting health | `http://127.0.0.1:5100/health` |
+| Reporting Swagger | `http://127.0.0.1:5100/swagger` |
+| Reporting OpenAPI | `http://127.0.0.1:5100/openapi/v1.json` |
 | Hangfire Dashboard | `http://127.0.0.1:5100/hangfire` |
 | Reporting API | `http://127.0.0.1:5100/api/reports/daily` |
 | Seq | `http://127.0.0.1:5341` |
 | MinIO API | `http://127.0.0.1:9000` |
 | MinIO Console | `http://127.0.0.1:9001` |
+| RedisInsight | `http://127.0.0.1:5540` |
+| Kafbat UI | `http://127.0.0.1:8085` |
 | Redis | `127.0.0.1:6379` |
 | Kafka | `127.0.0.1:9092` |
 | PostgreSQL | `127.0.0.1:5432` |
+
+Kafbat UI, RedisInsight, pgAdmin, Swagger, Hangfire, Seq ve MinIO
+Console için bağlantı ve demo adımları
+[Görsel Yönetim Arayüzleri Rehberi](docs/visual-management-guide.md)
+içinde yer alır.
 
 Uygulama yönlendirme zinciri:
 
@@ -616,8 +637,9 @@ GitHub Actions aşağıdaki işleri çalıştırır.
 ### Containers
 
 - Docker Compose yapılandırma kontrolü
-- Servis sayısının tam 15 olarak doğrulanması
+- Servis sayısının tam 17 olarak doğrulanması
 - MinIO, File API, Identity API, Gateway, Operations Worker, Outbox Worker, Reporting Worker ve Web image build işlemleri
+- Sabitlenmiş Kafbat UI ve RedisInsight image'larının indirilip doğrulanması
 - Oluşturulan image'ların doğrulanması
 
 ## Servisleri Durdurma
@@ -675,6 +697,7 @@ RELEASE.2025-10-15T17-29-55Z
 
 ## Kanıt ve Doğrulama
 
+- [Görsel yönetim arayüzleri rehberi](docs/visual-management-guide.md)
 - [Final proje raporu](docs/final-project-report.md)
 - [Demo ve operasyon runbook'u](docs/demo-runbook.md)
 - [Gereksinim–kanıt matrisi](docs/requirements-evidence.md)

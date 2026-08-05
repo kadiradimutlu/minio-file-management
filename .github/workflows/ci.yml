@@ -134,7 +134,15 @@ jobs:
           printf '%s\n' "$services"
 
           service_count="$(printf '%s\n' "$services" | wc -l)"
-          test "$service_count" -eq 15
+          test "$service_count" -eq 17
+
+      - name: Pull observability UI images
+        run: >
+          docker compose
+          --env-file .env.example
+          pull
+          kafbat-ui
+          redisinsight
 
       - name: Build application images
         run: >
@@ -166,3 +174,17 @@ jobs:
           test -n "$minio_version"
           docker image inspect \
             "minio-file-management/minio:${minio_version}"
+          kafbat_ui_version="$(
+            grep '^KAFBAT_UI_VERSION=' .env.example |
+              cut -d= -f2-
+          )"
+          redisinsight_version="$(
+            grep '^REDISINSIGHT_VERSION=' .env.example |
+              cut -d= -f2-
+          )"
+          test -n "$kafbat_ui_version"
+          test -n "$redisinsight_version"
+          docker image inspect \
+            "ghcr.io/kafbat/kafka-ui:${kafbat_ui_version}"
+          docker image inspect \
+            "redis/redisinsight:${redisinsight_version}"
